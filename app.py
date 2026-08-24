@@ -192,7 +192,7 @@ with tab2:
                             ts = datetime.datetime.now(tz_tw).strftime("%Y-%m-%d %H:%M:%S")
                             save_or_update_record(target_week, g, "輔導補簽", mode_selected, ts)
                             st.toast(f"✅ 已成功為 {g} 補簽！")
-                        st.rerun()
+                            st.rerun()
                 else:
                     st.success("🎉 該週所有組別皆已完成簽到！")
 
