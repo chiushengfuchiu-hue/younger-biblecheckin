@@ -11,7 +11,7 @@ GROUPS = ["大衛", "亞伯拉罕", "底波拉", "以撒", "米迦勒", "約設.
 ATTENDANCE_MODES = ["實體出席", "線上出席"]
 DATA_FILE = "attendance_records.csv"
 VERSES_FILE = "verses.csv"
-ADMIN_PASSWORD = "bible"  # 請自訂輔導後台密碼
+ADMIN_PASSWORD = "youngerbible"  # 請自訂輔導後台密碼
 LINE_NOTIFY_TOKEN = "" 
 
 st.set_page_config(page_title="青少年讀經小組簽到系統", page_icon="📖", layout="wide")
@@ -160,8 +160,9 @@ with tab2:
         # 1. 快速補簽工作台
         with sub_tab1:
             st.markdown("### ⚡ 指定週別一鍵補簽")
-            all_weeks = sorted(list(set(df_records["week_key"].tolist() + [current_week_key])), reverse=True)
-            target_week = st.selectbox("請選擇要處理/補簽的週別：", all_weeks)
+            # 產生 第 01 週 到 第 52 週 的清單，並自動把紀錄中的週別也整合進來
+all_weeks = sorted(list(set([f"第 {w:02d} 週" for w in range(1, 53)] + df_records["week_key"].tolist())))
+target_week = st.selectbox("請選擇要處理/補簽的週別：", all_weeks)
             
             target_week_records = df_records[df_records["week_key"] == target_week]
             signed_in_week = target_week_records["group_name"].tolist()
