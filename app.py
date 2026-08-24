@@ -161,8 +161,8 @@ with tab2:
         with sub_tab1:
             st.markdown("### ⚡ 指定週別一鍵補簽")
             # 產生 第 01 週 到 第 52 週 的清單，並自動把紀錄中的週別也整合進來
-all_weeks = sorted(list(set([f"第 {w:02d} 週" for w in range(1, 53)] + df_records["week_key"].tolist())))
-target_week = st.selectbox("請選擇要處理/補簽的週別：", all_weeks)
+            all_weeks = sorted(list(set([f"第 {w:02d} 週" for w in range(1, 53)] + df_records["week_key"].tolist())))
+            target_week = st.selectbox("請選擇要處理/補簽的週別：", all_weeks)
             
             target_week_records = df_records[df_records["week_key"] == target_week]
             signed_in_week = target_week_records["group_name"].tolist()
