@@ -84,7 +84,7 @@ def get_weekly_verse(week_num):
 # ==========================================
 # 3. 主介面邏輯
 # ==========================================
-st.title("📖 青少年讀經小組簽到系統")
+st.title("📖 青少年復興禱告小組(RPG)簽到系統")
 
 now = datetime.datetime.now()
 week_number = now.isocalendar()[1]
