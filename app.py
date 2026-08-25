@@ -14,7 +14,7 @@ VERSES_FILE = "verses.csv"
 ADMIN_PASSWORD = "youngerbible"  # 請自訂輔導後台密碼
 LINE_NOTIFY_TOKEN = "" 
 
-st.set_page_config(page_title="青少年讀經小組簽到系統", page_icon="📖", layout="wide")
+st.set_page_config(page_title="青少年復興禱告小組(RPG)簽到系統", page_icon="📖", layout="wide")
 
 # ==========================================
 # 2. 資料處理與經文庫載入
