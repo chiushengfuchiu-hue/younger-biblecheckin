@@ -216,7 +216,18 @@ with tab1:
     else:
         col1, col2 = st.columns(2)
         with col1:
-            signer_name = st.text_input("請輸入簽到人姓名 / 暱稱：", placeholder="例如：小明")
+            # 1. 將該組的成員字串以逗號或空格拆解成清單
+            raw_members_text = groups_dict.get(selected_group, "")
+            # 支援逗號、頓號、空格分隔名單
+            member_list = [m.strip() for m in raw_members_text.replace("，", ",").replace("、", ",").split(",") if m.strip()]
+            
+            # 2. 如果該組無成員資料，給予預設提示
+            if not member_list:
+                member_list = ["請選擇成員"]
+            
+            # 3. 改為限定名單的下拉選單
+            signer_name = st.selectbox("請選擇您的姓名：", member_list)
+            
         with col2:
             selected_mode = st.selectbox("請選擇讀經方式：", ATTENDANCE_MODES)
             
