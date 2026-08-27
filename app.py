@@ -11,7 +11,7 @@ from google.oauth2.service_account import Credentials
 # ==========================================
 ATTENDANCE_MODES = ["實體出席", "線上出席"]
 VERSES_FILE = "verses.csv"
-ADMIN_PASSWORD = "bible"  # 輔導後台密碼
+ADMIN_PASSWORD = "youngerbible"  # 輔導後台密碼
 LINE_NOTIFY_TOKEN = ""   # 可在此填入您的 LINE Notify Token
 
 # Google Sheets 頁籤名稱設定
