@@ -17,7 +17,11 @@ LINE_NOTIFY_TOKEN = ""   # 可在此填入您的 LINE Notify Token
 SHEET_YOUTH_ATTENDANCE = "youth_attendance"
 SHEET_YOUTH_MEMBERS = "youth_members"
 
-st.set_page_config(page_title="青少年讀經小組簽到系統", page_icon="📖", layout="wide")
+# 設定開辦第一週（第 1 次）：2026 年第 34 週
+START_WEEK_NUMBER = 34
+START_YEAR = 2026
+
+st.set_page_config(page_title="青少年靈修分享小組簽到系統", page_icon="📖", layout="wide")
 
 # ==========================================
 # 2. Google Sheets 連線與資料存取
@@ -56,7 +60,6 @@ def load_data():
         data = rows[1:]
         df = pd.DataFrame(data, columns=header)
         
-        # 彈性對應欄位名稱
         rename_map = {}
         for col in df.columns:
             if "week" in col: rename_map[col] = "week_key"
@@ -92,7 +95,7 @@ def save_or_update_record(week_key, group_name, signer, mode, timestamp):
                     break
                 
         if match_row_idx:
-            sheet.update(f"A{match_row_idx}:E{match_row_idx}", [[week_key, group_name, f"{signer} (輔導更新)", mode, timestamp]])
+            sheet.update(f"A{match_row_idx}:E{match_row_idx}", [[week_key, group_name, signer, mode, timestamp]])
         else:
             sheet.append_row([week_key, group_name, signer, mode, timestamp])
         return True
@@ -143,7 +146,7 @@ def get_weekly_verse(week_num):
     fallback = {
         "verse": "「你的話是我腳前的燈，是我路上的光。」",
         "ref": "詩篇 119:105",
-        "encouragement": "堅持每週讀經，讓上帝的話語指引每一步！"
+        "encouragement": "堅持每週靈修分享，讓上帝的話語成為彼此的亮光與祝福！"
     }
     if os.path.exists(VERSES_FILE):
         try:
@@ -160,19 +163,36 @@ def get_weekly_verse(week_num):
             print(f"讀取經文庫失敗: {e}")
     return fallback
 
+def get_session_info(week_key_str):
+    """計算指定 week_key 是第幾次靈修小組"""
+    try:
+        parts = week_key_str.split("-W")
+        w_num = int(parts[1])
+        s_num = (w_num - START_WEEK_NUMBER) + 1
+        return max(1, s_num)
+    except Exception:
+        return 1
+
 # ==========================================
 # 4. 主介面邏輯
 # ==========================================
-st.title("📖 青少年讀經小組簽到系統")
+st.title("📖 青少年靈修禱告小組簽到系統")
 
 now = datetime.datetime.now()
+
+# 計算【星期日 ～ 星期六】區間
+# python 中 weekday(): 周一=0 ... 周六=5, 周日=6
+idx_sun = (now.weekday() + 1) % 7
+start_of_week = now - datetime.timedelta(days=idx_sun)
+end_of_week = start_of_week + datetime.timedelta(days=6)
+week_range_str = f"{start_of_week.strftime('%Y/%m/%d')} (日) ~ {end_of_week.strftime('%Y/%m/%d')} (六)"
+
 week_number = now.isocalendar()[1]
 current_week_key = f"{now.year}-W{week_number:02d}"
 today_str = now.strftime("%Y年%m月%d日")
 
-start_of_week = now - datetime.timedelta(days=now.weekday())
-end_of_week = start_of_week + datetime.timedelta(days=6)
-week_range_str = f"{start_of_week.strftime('%Y/%m/%d')} ~ {end_of_week.strftime('%Y/%m/%d')}"
+# 計算目前是第幾次
+current_session_num = get_session_info(current_week_key)
 
 groups_dict, sheet_err = load_youth_groups_and_members()
 
@@ -194,27 +214,26 @@ with tab1:
     verse_info = get_weekly_verse(week_number)
     
     st.info(f"""
-    📅 **今天是 {today_str}（第 {week_number} 週 / {current_week_key}）**  
+    📅 **今天是 {today_str}（【第 {current_session_num} 次】靈修禱告小組）**  
     📖 **本週經文**：*{verse_info['verse']}* —— **{verse_info['ref']}**  
 
     💡 **輔導小叮嚀**：{verse_info['encouragement']}
     """)
     
-    st.subheader(f"📅 本週組別簽到 ({week_range_str})")
+    st.subheader(f"📅 本週組別簽到區間：{week_range_str}")
     selected_group = st.selectbox("請選擇您的組別：", GROUPS)
     
-    # 顯示全組名單作為輔助參考
     members_text = groups_dict.get(selected_group, "尚無成員資料")
     st.markdown(f"👥 **{selected_group} 全組成員**：{members_text}")
     st.write("")
     
     if selected_group in signed_groups_this_week:
         record = df_records[(df_records["week_key"] == current_week_key) & (df_records["group_name"] == selected_group)].iloc[0]
-        st.success(f"🎉 **{selected_group}** 本週已完成簽到！")
+        st.success(f"🎉 **{selected_group}** 本週（第 {current_session_num} 次）已完成簽到！")
         st.info(f"👤 **簽到代表**：{record.get('signer', '未知')}\n\n📌 **出席方式**：{record['mode']}\n\n⏰ **完成時間**：{record['timestamp']}")
         st.button("完成簽到（本週已登記）", disabled=True, use_container_width=True)
     else:
-        # 自動拆解該組的名字成獨立選單項目（支援句點、頓號、逗號、空格）
+        # 自動拆解該組的名字（支援半形/全形句點、頓號、逗號、空格）
         raw_members_text = groups_dict.get(selected_group, "")
         clean_text = raw_members_text.replace("，", ",").replace("、", ",").replace("．", ",").replace(".", ",")
         member_list = [m.strip() for m in clean_text.split(",") if m.strip()]
@@ -224,10 +243,9 @@ with tab1:
 
         col1, col2 = st.columns(2)
         with col1:
-            # 讓使用者「選擇該組特定的某位成員」作為簽到代表
-            signer_name = st.selectbox("請選擇『您』的姓名（簽到代表）：", member_list)
+            signer_name = st.selectbox("請選擇『您』的姓名（代表簽到人）：", member_list)
         with col2:
-            selected_mode = st.selectbox("請選擇讀經方式：", ATTENDANCE_MODES)
+            selected_mode = st.selectbox("請選擇聚會方式：", ATTENDANCE_MODES)
             
         if st.button("🚀 確認送出簽到", type="primary", use_container_width=True):
             if signer_name == "尚無成員資料":
@@ -236,15 +254,15 @@ with tab1:
                 timestamp_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 if save_or_update_record(current_week_key, selected_group, signer_name, selected_mode, timestamp_str):
                     line_message = (
-                        f"\n🎉【讀經簽到成功】\n"
-                        f"📌 組別：{selected_group}\n"
+                        f"\n🎉【靈修小組簽到成功】\n"
+                        f"📌 組別：{selected_group}（第 {current_session_num} 次）\n"
                         f"👤 簽到代表：{signer_name}\n"
-                        f"💡 方式：{selected_mode}\n"
+                        f"💡 聚會方式：{selected_mode}\n"
                         f"⏰ 時間：{timestamp_str}\n"
-                        f"📈 本週已完成：{len(signed_groups_this_week) + 1}/{len(GROUPS)} 組"
+                        f"📈 本週完成率：{len(signed_groups_this_week) + 1}/{len(GROUPS)} 組"
                     )
                     send_line_notify(line_message)
-                    st.success(f"✅ {selected_group}（簽到人：{signer_name}）簽到成功！")
+                    st.success(f"✅ {selected_group}（簽到代表：{signer_name}）簽到成功！")
                     st.rerun()
 
 # ------------------------------------------
@@ -259,16 +277,27 @@ with tab2:
         sub_tab1, sub_tab2, sub_tab3, sub_tab4 = st.tabs(["⚡ 快速補簽工作台", "📊 歷程矩陣與檢視範圍", "🔍 單組深度查詢", "📜 52週經文庫預覽"])
         
         with sub_tab1:
-            st.markdown("### ⚡ 指定週別一鍵補簽")
-            all_weeks = sorted(list(set(df_records["week_key"].tolist() + [current_week_key])), reverse=True) if not df_records.empty else [current_week_key]
-            target_week = st.selectbox("請選擇要處理/補簽的週別：", all_weeks)
+            st.markdown("### ⚡ 指定次數/週別手動補簽")
             
+            all_weeks = sorted(list(set(df_records["week_key"].tolist() + [current_week_key])), reverse=True) if not df_records.empty else [current_week_key]
+            
+            # 選項加上「第 X 次」名稱標示
+            week_options_map = {w: f"{w} （第 {get_session_info(w)} 次小組聚會）" for w in all_weeks}
+            
+            col_w, col_d = st.columns(2)
+            with col_w:
+                target_week = st.selectbox("1. 請選擇補簽次數/週別：", options=all_weeks, format_func=lambda x: week_options_map[x])
+                target_session_num = get_session_info(target_week)
+            with col_d:
+                custom_date = st.date_input("2. 請選擇實際聚會日期：", datetime.date.today())
+                st.caption(f"💡 目前選取：第 {target_session_num} 次小組聚會")
+
             target_week_records = df_records[df_records["week_key"] == target_week] if not df_records.empty else pd.DataFrame()
             signed_in_week = target_week_records["group_name"].tolist() if not target_week_records.empty else []
             
             col_left, col_right = st.columns(2)
             with col_left:
-                st.write(f"🟢 **{target_week} 已簽到組別明細**")
+                st.write(f"🟢 **【第 {target_session_num} 次】已完成簽到組別**")
                 if not target_week_records.empty:
                     for _, row in target_week_records.iterrows():
                         st.text(f"• {row['group_name']} | 代表: {row.get('signer', '未知')} | {row['mode']} | {row['timestamp']}")
@@ -276,7 +305,7 @@ with tab2:
                     st.info("該週尚無任何簽到紀錄。")
                     
             with col_right:
-                st.write(f"🔴 **{target_week} 未簽到組別 (輔導手動補簽)**")
+                st.write(f"🔴 **【第 {target_session_num} 次】未簽到組別 (輔導補簽)**")
                 missing_groups = [g for g in GROUPS if g not in signed_in_week]
                 if missing_groups:
                     for g in missing_groups:
@@ -284,25 +313,29 @@ with tab2:
                         c_group.write(f"**{g}**")
                         mode_selected = c_mode.selectbox("方式", ATTENDANCE_MODES, key=f"mode_{target_week}_{g}")
                         if c_btn.button("一鍵補簽", key=f"btn_{target_week}_{g}"):
-                            ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                            save_or_update_record(target_week, g, "輔導補簽", mode_selected, ts)
-                            st.toast(f"✅ 已成功為 {g} 補簽！")
+                            formatted_ts = f"{custom_date.strftime('%Y-%m-%d')} (輔導補簽/第{target_session_num}次)"
+                            save_or_update_record(target_week, g, f"輔導補簽", mode_selected, formatted_ts)
+                            st.toast(f"✅ 已成功為 {g} 完成『第 {target_session_num} 次』補簽！")
                             st.rerun()
                 else:
-                    st.success("🎉 該週所有組別皆已完成簽到！")
+                    st.success(f"🎉 第 {target_session_num} 次小組聚會所有組別皆已完成簽到！")
 
         with sub_tab2:
             st.markdown("### 📊 跨週出席矩陣表")
             if not df_records.empty:
-                range_option = st.radio("選擇顯示範圍：", ["最近 4 週", "最近 8 週", "全歷史紀錄"], horizontal=True)
+                range_option = st.radio("選擇顯示範圍：", ["最近 4 次", "最近 8 次", "全歷史紀錄"], horizontal=True)
                 
                 pivot_df = df_records.pivot(index="group_name", columns="week_key", values="mode")
                 pivot_df = pivot_df.reindex(GROUPS).fillna("❌ 未簽到")
                 
+                # 欄位重新命名顯示為「第 X 次」
+                rename_cols = {col: f"第 {get_session_info(col)} 次 ({col})" for col in pivot_df.columns}
+                pivot_df = pivot_df.rename(columns=rename_cols)
+                
                 cols = list(pivot_df.columns)
-                if range_option == "最近 4 週":
+                if range_option == "最近 4 次":
                     cols = cols[-4:]
-                elif range_option == "最近 8 週":
+                elif range_option == "最近 8 次":
                     cols = cols[-8:]
                     
                 display_df = pivot_df[cols].copy()
@@ -310,7 +343,7 @@ with tab2:
                 total_displayed = len(cols)
                 if total_displayed > 0:
                     att_counts = (display_df != "❌ 未簽到").sum(axis=1)
-                    display_df["出席週數"] = att_counts
+                    display_df["出席次數"] = att_counts
                     display_df["出席率"] = (att_counts / total_displayed * 100).round(1).astype(str) + "%"
                 
                 display_df.insert(0, "成員名單", [groups_dict.get(g, "") for g in display_df.index])
@@ -328,9 +361,10 @@ with tab2:
             
             group_df = df_records[df_records["group_name"] == search_group].sort_values(by="week_key", ascending=False) if not df_records.empty else pd.DataFrame()
             if not group_df.empty:
+                group_df["session_display"] = group_df["week_key"].apply(lambda x: f"第 {get_session_info(x)} 次 ({x})")
                 st.write(f"**{search_group}** 的歷史簽到紀錄（共 {len(group_df)} 次）：")
-                st.dataframe(group_df[["week_key", "signer", "mode", "timestamp"]].rename(columns={
-                    "week_key": "週別", "signer": "簽到代表", "mode": "簽到方式", "timestamp": "簽到時間"
+                st.dataframe(group_df[["session_display", "signer", "mode", "timestamp"]].rename(columns={
+                    "session_display": "聚會次數/週別", "signer": "簽到代表", "mode": "聚會方式", "timestamp": "簽到時間/補簽註記"
                 }), hide_index=True, use_container_width=True)
             else:
                 st.info(f"{search_group} 目前尚無任何簽到紀錄。")
