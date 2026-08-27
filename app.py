@@ -21,7 +21,7 @@ SHEET_YOUTH_MEMBERS = "youth_members"
 START_WEEK_NUMBER = 34
 START_YEAR = 2026
 
-st.set_page_config(page_title="青少年靈修分享小組簽到系統", page_icon="📖", layout="wide")
+st.set_page_config(page_title="青少年靈修禱告小組簽到系統", page_icon="📖", layout="wide")
 
 # ==========================================
 # 2. Google Sheets 連線與資料存取
@@ -173,6 +173,20 @@ def get_session_info(week_key_str):
     except Exception:
         return 1
 
+def get_week_range_str_from_key(week_key_str):
+    """從 2026-W35 這種 week_key 計算出當週【週日 ～ 週六】的日期字串"""
+    try:
+        year, w_str = week_key_str.split("-W")
+        w_num = int(w_str)
+        # 取得該 ISO 週別的星期一
+        mon_date = datetime.date.fromisocalendar(int(year), w_num, 1)
+        # 轉為該週的星期日 (星期一往前 1 天)
+        sun_date = mon_date - datetime.timedelta(days=1)
+        sat_date = sun_date + datetime.timedelta(days=6)
+        return f"{sun_date.strftime('%Y/%m/%d')} (日) ~ {sat_date.strftime('%Y/%m/%d')} (六)"
+    except Exception:
+        return "未知日期區間"
+
 # ==========================================
 # 4. 主介面邏輯
 # ==========================================
@@ -180,8 +194,7 @@ st.title("📖 青少年靈修禱告小組簽到系統")
 
 now = datetime.datetime.now()
 
-# 計算【星期日 ～ 星期六】區間
-# python 中 weekday(): 周一=0 ... 周六=5, 周日=6
+# 計算目前這週【星期日 ～ 星期六】區間
 idx_sun = (now.weekday() + 1) % 7
 start_of_week = now - datetime.timedelta(days=idx_sun)
 end_of_week = start_of_week + datetime.timedelta(days=6)
@@ -191,7 +204,6 @@ week_number = now.isocalendar()[1]
 current_week_key = f"{now.year}-W{week_number:02d}"
 today_str = now.strftime("%Y年%m月%d日")
 
-# 計算目前是第幾次
 current_session_num = get_session_info(current_week_key)
 
 groups_dict, sheet_err = load_youth_groups_and_members()
@@ -233,7 +245,6 @@ with tab1:
         st.info(f"👤 **簽到代表**：{record.get('signer', '未知')}\n\n📌 **出席方式**：{record['mode']}\n\n⏰ **完成時間**：{record['timestamp']}")
         st.button("完成簽到（本週已登記）", disabled=True, use_container_width=True)
     else:
-        # 自動拆解該組的名字（支援半形/全形句點、頓號、逗號、空格）
         raw_members_text = groups_dict.get(selected_group, "")
         clean_text = raw_members_text.replace("，", ",").replace("、", ",").replace("．", ",").replace(".", ",")
         member_list = [m.strip() for m in clean_text.split(",") if m.strip()]
@@ -279,9 +290,11 @@ with tab2:
         with sub_tab1:
             st.markdown("### ⚡ 指定次數/週別手動補簽")
             
-            all_weeks = sorted(list(set(df_records["week_key"].tolist() + [current_week_key])), reverse=True) if not df_records.empty else [current_week_key]
+            # 強制確保【第 1 次（START_WEEK_NUMBER）】一直到【當週】都會顯示在選單中
+            generated_weeks = [f"{START_YEAR}-W{w:02d}" for w in range(START_WEEK_NUMBER, week_number + 1)]
+            existing_weeks = df_records["week_key"].tolist() if not df_records.empty else []
+            all_weeks = sorted(list(set(generated_weeks + existing_weeks)), reverse=True)
             
-            # 選項加上「第 X 次」名稱標示
             week_options_map = {w: f"{w} （第 {get_session_info(w)} 次小組聚會）" for w in all_weeks}
             
             col_w, col_d = st.columns(2)
@@ -289,8 +302,9 @@ with tab2:
                 target_week = st.selectbox("1. 請選擇補簽次數/週別：", options=all_weeks, format_func=lambda x: week_options_map[x])
                 target_session_num = get_session_info(target_week)
             with col_d:
-                custom_date = st.date_input("2. 請選擇實際聚會日期：", datetime.date.today())
-                st.caption(f"💡 目前選取：第 {target_session_num} 次小組聚會")
+                # 自動根據選擇的週別計算【週日 ~ 週六】區間
+                target_week_range = get_week_range_str_from_key(target_week)
+                st.text_input("2. 該次聚會週區間（日~六）：", value=target_week_range, disabled=True)
 
             target_week_records = df_records[df_records["week_key"] == target_week] if not df_records.empty else pd.DataFrame()
             signed_in_week = target_week_records["group_name"].tolist() if not target_week_records.empty else []
@@ -313,8 +327,8 @@ with tab2:
                         c_group.write(f"**{g}**")
                         mode_selected = c_mode.selectbox("方式", ATTENDANCE_MODES, key=f"mode_{target_week}_{g}")
                         if c_btn.button("一鍵補簽", key=f"btn_{target_week}_{g}"):
-                            formatted_ts = f"{custom_date.strftime('%Y-%m-%d')} (輔導補簽/第{target_session_num}次)"
-                            save_or_update_record(target_week, g, f"輔導補簽", mode_selected, formatted_ts)
+                            formatted_ts = f"輔導補簽 (區間: {target_week_range})"
+                            save_or_update_record(target_week, g, "輔導補簽", mode_selected, formatted_ts)
                             st.toast(f"✅ 已成功為 {g} 完成『第 {target_session_num} 次』補簽！")
                             st.rerun()
                 else:
@@ -328,7 +342,6 @@ with tab2:
                 pivot_df = df_records.pivot(index="group_name", columns="week_key", values="mode")
                 pivot_df = pivot_df.reindex(GROUPS).fillna("❌ 未簽到")
                 
-                # 欄位重新命名顯示為「第 X 次」
                 rename_cols = {col: f"第 {get_session_info(col)} 次 ({col})" for col in pivot_df.columns}
                 pivot_df = pivot_df.rename(columns=rename_cols)
                 
