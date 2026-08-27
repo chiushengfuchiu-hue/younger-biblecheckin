@@ -14,7 +14,6 @@ VERSES_FILE = "verses.csv"
 ADMIN_PASSWORD = "youngerbible"  # 輔導後台密碼
 LINE_NOTIFY_TOKEN = ""   # 可在此填入您的 LINE Notify Token
 
-# Google Sheets 頁籤名稱設定
 SHEET_YOUTH_ATTENDANCE = "youth_attendance"
 SHEET_YOUTH_MEMBERS = "youth_members"
 
@@ -26,6 +25,10 @@ st.set_page_config(page_title="青少年讀經小組簽到系統", page_icon="�
 def get_gspread_client():
     """建立 GCP Service Account 連線"""
     scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+    
+    if "gcp_service_account" not in st.secrets:
+        raise KeyError("Secrets 中缺少 'gcp_service_account' 設定！請至 Streamlit Cloud 設定。")
+        
     creds_dict = dict(st.secrets["gcp_service_account"])
     if "private_key" in creds_dict:
         pk = creds_dict["private_key"].replace("\\n", "\n")
@@ -55,7 +58,7 @@ def load_data():
             else:
                 df[col] = df[col].astype(str).str.strip()
         return df
-    except Exception as e:
+    except Exception:
         return pd.DataFrame(columns=["week_key", "group_name", "signer", "mode", "timestamp"])
 
 def save_or_update_record(week_key, group_name, signer, mode, timestamp):
@@ -92,7 +95,6 @@ def load_youth_groups_and_members():
         if records:
             groups_dict = {}
             for r in records:
-                # 兼容幾種常見欄位命名方式
                 g_name = str(r.get("group_name") or r.get("組別") or r.get("小組") or "").strip()
                 m_list = str(r.get("members") or r.get("組員名單") or r.get("成員") or "").strip()
                 if g_name:
@@ -100,7 +102,7 @@ def load_youth_groups_and_members():
             if groups_dict:
                 return groups_dict, None
     except Exception as e:
-        return {}, f"連結 Sheet 失敗 ({e})"
+        return {}, f"連結失敗 ({e})"
     return {}, "頁籤資料空白"
 
 # ==========================================
@@ -147,14 +149,17 @@ week_number = now.isocalendar()[1]
 current_week_key = f"{now.year}-W{week_number:02d}"
 today_str = now.strftime("%Y年%m月%d日")
 
-# 載入試算表組別資料
+# 計算本週一與本週日的日期區間
+start_of_week = now - datetime.timedelta(days=now.weekday())
+end_of_week = start_of_week + datetime.timedelta(days=6)
+week_range_str = f"{start_of_week.strftime('%Y/%m/%d')} ~ {end_of_week.strftime('%Y/%m/%d')}"
+
 groups_dict, sheet_err = load_youth_groups_and_members()
 
 if not groups_dict:
-    # 預設備用
-    groups_dict = {"第一組": "尚未載入", "第二組": "尚未載入"}
+    groups_dict = {"第一組": "請至 Streamlit Cloud 設定 Secrets 金鑰", "第二組": "請至 Streamlit Cloud 設定 Secrets 金鑰"}
     if sheet_err:
-        st.warning(f"⚠️ 讀取 youth_members 頁籤提醒：{sheet_err}。請檢查試算表名稱或欄位標題。")
+        st.warning(f"⚠️ 讀取 youth_members 頁籤提醒：{sheet_err}。請檢查 Streamlit Cloud Secrets 設定與試算表欄位。")
 
 GROUPS = list(groups_dict.keys())
 df_records = load_data()
@@ -168,7 +173,6 @@ tab1, tab2 = st.tabs(["✍️ 青少年簽到", "🔒 輔導快速管理後台"]
 with tab1:
     verse_info = get_weekly_verse(week_number)
     
-    # 1. 修正日期呈現：將今天日期明確顯示出來
     st.info(f"""
     📅 **今天是 {today_str}（第 {week_number} 週 / {current_week_key}）**  
     📖 **本週經文**：*{verse_info['verse']}* —— **{verse_info['ref']}**  
@@ -176,10 +180,10 @@ with tab1:
     💡 **輔導小叮嚀**：{verse_info['encouragement']}
     """)
     
-    st.subheader("📅 本週組別簽到")
+    # 在本週組別簽到旁標示本週日期區間 (週一 ~ 週日)
+    st.subheader(f"📅 本週組別簽到 ({week_range_str})")
     selected_group = st.selectbox("請選擇您的組別：", GROUPS)
     
-    # 2. 修正字體大小統一問題：去除微小代碼塊格式，改為標準粗體與內文
     members_text = groups_dict.get(selected_group, "尚無成員資料")
     st.markdown(f"👥 **{selected_group} 組員名單**：{members_text}")
     st.write("")
