@@ -11,7 +11,7 @@ from google.oauth2.service_account import Credentials
 # ==========================================
 ATTENDANCE_MODES = ["實體出席", "線上出席"]
 VERSES_FILE = "verses.csv"
-ADMIN_PASSWORD = "youngerbible"  # 輔導後台密碼
+ADMIN_PASSWORD = "bible"  # 輔導後台密碼
 LINE_NOTIFY_TOKEN = ""   # 可在此填入您的 LINE Notify Token
 
 SHEET_YOUTH_ATTENDANCE = "youth_attendance"
@@ -27,16 +27,21 @@ def get_gspread_client():
     scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     
     if "gcp_service_account" not in st.secrets:
-        raise KeyError("Secrets 中缺少 'gcp_service_account' 設定！請至 Streamlit Cloud 設定。")
+        raise KeyError("Secrets 中缺少 'gcp_service_account' 設定！")
         
     creds_dict = dict(st.secrets["gcp_service_account"])
+    
+    # 嚴謹處理 private_key 格式與換行
     if "private_key" in creds_dict:
-        pk = creds_dict["private_key"].replace("\\n", "\n")
-        if not pk.startswith("-----BEGIN PRIVATE KEY-----"):
-            pk = "-----BEGIN PRIVATE KEY-----\n" + pk
-        if not pk.endswith("-----END PRIVATE KEY-----"):
-            pk = pk + "\n-----END PRIVATE KEY-----"
-        creds_dict["private_key"] = pk.strip()
+        pk = creds_dict["private_key"]
+        pk = pk.replace("\\n", "\n").strip()
+        
+        # 移除字首字尾引號（若有）
+        if (pk.startswith('"') and pk.endswith('"')) or (pk.startswith("'") and pk.endswith("'")):
+            pk = pk[1:-1]
+            
+        creds_dict["private_key"] = pk
+        
     creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
     return gspread.authorize(creds)
 
@@ -149,7 +154,7 @@ week_number = now.isocalendar()[1]
 current_week_key = f"{now.year}-W{week_number:02d}"
 today_str = now.strftime("%Y年%m月%d日")
 
-# 計算本週一與本週日的日期區間
+# 計算本週一與本週日區間
 start_of_week = now - datetime.timedelta(days=now.weekday())
 end_of_week = start_of_week + datetime.timedelta(days=6)
 week_range_str = f"{start_of_week.strftime('%Y/%m/%d')} ~ {end_of_week.strftime('%Y/%m/%d')}"
@@ -157,9 +162,9 @@ week_range_str = f"{start_of_week.strftime('%Y/%m/%d')} ~ {end_of_week.strftime(
 groups_dict, sheet_err = load_youth_groups_and_members()
 
 if not groups_dict:
-    groups_dict = {"第一組": "請至 Streamlit Cloud 設定 Secrets 金鑰", "第二組": "請至 Streamlit Cloud 設定 Secrets 金鑰"}
+    groups_dict = {"第一組": "尚未載入", "第二組": "尚未載入"}
     if sheet_err:
-        st.warning(f"⚠️ 讀取 youth_members 頁籤提醒：{sheet_err}。請檢查 Streamlit Cloud Secrets 設定與試算表欄位。")
+        st.warning(f"⚠️ 讀取 youth_members 頁籤提醒：{sheet_err}。請確認 Secrets 內的 private_key 格式。")
 
 GROUPS = list(groups_dict.keys())
 df_records = load_data()
@@ -180,7 +185,6 @@ with tab1:
     💡 **輔導小叮嚀**：{verse_info['encouragement']}
     """)
     
-    # 在本週組別簽到旁標示本週日期區間 (週一 ~ 週日)
     st.subheader(f"📅 本週組別簽到 ({week_range_str})")
     selected_group = st.selectbox("請選擇您的組別：", GROUPS)
     
