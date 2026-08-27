@@ -101,7 +101,7 @@ def save_or_update_record(week_key, group_name, signer, mode, timestamp):
         return False
 
 def load_youth_groups_and_members():
-    """從 youth_members 頁籤載入組別與成員對照表（強效全覆蓋版）"""
+    """從 youth_members 頁籤載入組別與成員對照表"""
     try:
         client = get_gspread_client()
         sheet_name = st.secrets.get("spreadsheet_name", "Church_Attendance")
@@ -112,7 +112,6 @@ def load_youth_groups_and_members():
             return {}, "頁籤內無資料內容"
 
         groups_dict = {}
-        # 跳過第一行標頭，從第二行開始抓取 A欄（第0個）與 B欄（第1個）
         for row in rows[1:]:
             if len(row) >= 1:
                 g_name = str(row[0]).strip()
@@ -204,8 +203,9 @@ with tab1:
     st.subheader(f"📅 本週組別簽到 ({week_range_str})")
     selected_group = st.selectbox("請選擇您的組別：", GROUPS)
     
+    # 顯示全組名單作為輔助參考
     members_text = groups_dict.get(selected_group, "尚無成員資料")
-    st.markdown(f"👥 **{selected_group} 組員名單**：{members_text}")
+    st.markdown(f"👥 **{selected_group} 全組成員**：{members_text}")
     st.write("")
     
     if selected_group in signed_groups_this_week:
@@ -214,39 +214,36 @@ with tab1:
         st.info(f"👤 **簽到代表**：{record.get('signer', '未知')}\n\n📌 **出席方式**：{record['mode']}\n\n⏰ **完成時間**：{record['timestamp']}")
         st.button("完成簽到（本週已登記）", disabled=True, use_container_width=True)
     else:
+        # 自動拆解該組的名字成獨立選單項目（支援頓號、逗號、空格）
+        raw_members_text = groups_dict.get(selected_group, "")
+        member_list = [m.strip() for m in raw_members_text.replace("，", ",").replace("、", ",").split(",") if m.strip()]
+        
+        if not member_list:
+            member_list = ["尚無成員資料"]
+
         col1, col2 = st.columns(2)
         with col1:
-            # 1. 將該組的成員字串以逗號或空格拆解成清單
-            raw_members_text = groups_dict.get(selected_group, "")
-            # 支援逗號、頓號、空格分隔名單
-            member_list = [m.strip() for m in raw_members_text.replace("，", ",").replace("、", ",").split(",") if m.strip()]
-            
-            # 2. 如果該組無成員資料，給予預設提示
-            if not member_list:
-                member_list = ["請選擇成員"]
-            
-            # 3. 改為限定名單的下拉選單
-            signer_name = st.selectbox("請選擇您的姓名：", member_list)
-            
+            # 讓使用者「選擇該組特定的某位成員」作為簽到代表
+            signer_name = st.selectbox("請選擇『您』的姓名（簽到代表）：", member_list)
         with col2:
             selected_mode = st.selectbox("請選擇讀經方式：", ATTENDANCE_MODES)
             
         if st.button("🚀 確認送出簽到", type="primary", use_container_width=True):
-            if not signer_name.strip():
-                st.error("⚠️ 請輸入簽到人姓名後再送出！")
+            if signer_name == "尚無成員資料":
+                st.error("⚠️ 該組尚無成員資料，無法完成簽到！")
             else:
                 timestamp_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                if save_or_update_record(current_week_key, selected_group, signer_name.strip(), selected_mode, timestamp_str):
+                if save_or_update_record(current_week_key, selected_group, signer_name, selected_mode, timestamp_str):
                     line_message = (
                         f"\n🎉【讀經簽到成功】\n"
                         f"📌 組別：{selected_group}\n"
-                        f"👤 簽到人：{signer_name.strip()}\n"
+                        f"👤 簽到代表：{signer_name}\n"
                         f"💡 方式：{selected_mode}\n"
                         f"⏰ 時間：{timestamp_str}\n"
                         f"📈 本週已完成：{len(signed_groups_this_week) + 1}/{len(GROUPS)} 組"
                     )
                     send_line_notify(line_message)
-                    st.success(f"✅ {selected_group} 簽到成功！")
+                    st.success(f"✅ {selected_group}（簽到人：{signer_name}）簽到成功！")
                     st.rerun()
 
 # ------------------------------------------
