@@ -11,7 +11,7 @@ from google.oauth2.service_account import Credentials
 # ==========================================
 ATTENDANCE_MODES = ["實體出席", "線上出席"]
 VERSES_FILE = "verses.csv"
-ADMIN_PASSWORD = "bible"  # 輔導後台密碼
+ADMIN_PASSWORD = "youngerbible"  # 輔導後台密碼
 LINE_NOTIFY_TOKEN = ""   # 可在此填入您的 LINE Notify Token
 
 SHEET_YOUTH_ATTENDANCE = "youth_attendance"
@@ -31,16 +31,12 @@ def get_gspread_client():
         
     creds_dict = dict(st.secrets["gcp_service_account"])
     
-    # 嚴謹處理 private_key 格式與換行
     if "private_key" in creds_dict:
-        pk = creds_dict["private_key"]
-        pk = pk.replace("\\n", "\n").strip()
-        
-        # 移除字首字尾引號（若有）
+        pk = str(creds_dict["private_key"]).strip()
         if (pk.startswith('"') and pk.endswith('"')) or (pk.startswith("'") and pk.endswith("'")):
             pk = pk[1:-1]
-            
-        creds_dict["private_key"] = pk
+        pk = pk.replace("\\n", "\n")
+        creds_dict["private_key"] = pk.strip()
         
     creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
     return gspread.authorize(creds)
@@ -51,12 +47,26 @@ def load_data():
         client = get_gspread_client()
         sheet_name = st.secrets.get("spreadsheet_name", "Church_Attendance")
         sheet = client.open(sheet_name).worksheet(SHEET_YOUTH_ATTENDANCE)
-        records = sheet.get_all_records()
-        df = pd.DataFrame(records)
         
-        if df.empty:
+        rows = sheet.get_all_values()
+        if not rows or len(rows) <= 1:
             return pd.DataFrame(columns=["week_key", "group_name", "signer", "mode", "timestamp"])
             
+        header = [str(h).strip().lower() for h in rows[0]]
+        data = rows[1:]
+        df = pd.DataFrame(data, columns=header)
+        
+        # 彈性對應欄位名稱
+        rename_map = {}
+        for col in df.columns:
+            if "week" in col: rename_map[col] = "week_key"
+            elif "group" in col or "組別" in col: rename_map[col] = "group_name"
+            elif "signer" in col or "簽到" in col or "代表" in col: rename_map[col] = "signer"
+            elif "mode" in col or "方式" in col: rename_map[col] = "mode"
+            elif "time" in col or "時間" in col: rename_map[col] = "timestamp"
+            
+        df = df.rename(columns=rename_map)
+        
         for col in ["week_key", "group_name", "signer", "mode", "timestamp"]:
             if col not in df.columns:
                 df[col] = "未知" if col == "signer" else ""
@@ -72,13 +82,14 @@ def save_or_update_record(week_key, group_name, signer, mode, timestamp):
         client = get_gspread_client()
         sheet_name = st.secrets.get("spreadsheet_name", "Church_Attendance")
         sheet = client.open(sheet_name).worksheet(SHEET_YOUTH_ATTENDANCE)
-        records = sheet.get_all_records()
+        rows = sheet.get_all_values()
         
         match_row_idx = None
-        for idx, row in enumerate(records):
-            if str(row.get("week_key")).strip() == str(week_key).strip() and str(row.get("group_name")).strip() == str(group_name).strip():
-                match_row_idx = idx + 2
-                break
+        if len(rows) > 1:
+            for idx, row in enumerate(rows[1:], start=2):
+                if len(row) >= 2 and str(row[0]).strip() == str(week_key).strip() and str(row[1]).strip() == str(group_name).strip():
+                    match_row_idx = idx
+                    break
                 
         if match_row_idx:
             sheet.update(f"A{match_row_idx}:E{match_row_idx}", [[week_key, group_name, f"{signer} (輔導更新)", mode, timestamp]])
@@ -90,25 +101,31 @@ def save_or_update_record(week_key, group_name, signer, mode, timestamp):
         return False
 
 def load_youth_groups_and_members():
-    """從 youth_members 頁籤載入組別與成員對照表"""
+    """從 youth_members 頁籤載入組別與成員對照表（強效全覆蓋版）"""
     try:
         client = get_gspread_client()
         sheet_name = st.secrets.get("spreadsheet_name", "Church_Attendance")
         sheet = client.open(sheet_name).worksheet(SHEET_YOUTH_MEMBERS)
-        records = sheet.get_all_records()
         
-        if records:
-            groups_dict = {}
-            for r in records:
-                g_name = str(r.get("group_name") or r.get("組別") or r.get("小組") or "").strip()
-                m_list = str(r.get("members") or r.get("組員名單") or r.get("成員") or "").strip()
+        rows = sheet.get_all_values()
+        if not rows or len(rows) <= 1:
+            return {}, "頁籤內無資料內容"
+
+        groups_dict = {}
+        # 跳過第一行標頭，從第二行開始抓取 A欄（第0個）與 B欄（第1個）
+        for row in rows[1:]:
+            if len(row) >= 1:
+                g_name = str(row[0]).strip()
+                m_list = str(row[1]).strip() if len(row) >= 2 else ""
                 if g_name:
                     groups_dict[g_name] = m_list
-            if groups_dict:
-                return groups_dict, None
+                    
+        if groups_dict:
+            return groups_dict, None
+        else:
+            return {}, "未找到有效組別名稱"
     except Exception as e:
-        return {}, f"連結失敗 ({e})"
-    return {}, "頁籤資料空白"
+        return {}, f"連線或讀取失敗 ({e})"
 
 # ==========================================
 # 3. 輔助工具函數
@@ -154,7 +171,6 @@ week_number = now.isocalendar()[1]
 current_week_key = f"{now.year}-W{week_number:02d}"
 today_str = now.strftime("%Y年%m月%d日")
 
-# 計算本週一與本週日區間
 start_of_week = now - datetime.timedelta(days=now.weekday())
 end_of_week = start_of_week + datetime.timedelta(days=6)
 week_range_str = f"{start_of_week.strftime('%Y/%m/%d')} ~ {end_of_week.strftime('%Y/%m/%d')}"
@@ -162,13 +178,13 @@ week_range_str = f"{start_of_week.strftime('%Y/%m/%d')} ~ {end_of_week.strftime(
 groups_dict, sheet_err = load_youth_groups_and_members()
 
 if not groups_dict:
-    groups_dict = {"第一組": "尚未載入", "第二組": "尚未載入"}
+    groups_dict = {"大衛": "預設組員", "亞伯拉罕": "預設組員"}
     if sheet_err:
-        st.warning(f"⚠️ 讀取 youth_members 頁籤提醒：{sheet_err}。請確認 Secrets 內的 private_key 格式。")
+        st.warning(f"⚠️ 讀取 youth_members 狀態：{sheet_err}")
 
 GROUPS = list(groups_dict.keys())
 df_records = load_data()
-signed_groups_this_week = df_records[df_records["week_key"] == current_week_key]["group_name"].tolist()
+signed_groups_this_week = df_records[df_records["week_key"] == current_week_key]["group_name"].tolist() if not df_records.empty else []
 
 tab1, tab2 = st.tabs(["✍️ 青少年簽到", "🔒 輔導快速管理後台"])
 
@@ -235,11 +251,11 @@ with tab2:
         
         with sub_tab1:
             st.markdown("### ⚡ 指定週別一鍵補簽")
-            all_weeks = sorted(list(set(df_records["week_key"].tolist() + [current_week_key])), reverse=True)
+            all_weeks = sorted(list(set(df_records["week_key"].tolist() + [current_week_key])), reverse=True) if not df_records.empty else [current_week_key]
             target_week = st.selectbox("請選擇要處理/補簽的週別：", all_weeks)
             
-            target_week_records = df_records[df_records["week_key"] == target_week]
-            signed_in_week = target_week_records["group_name"].tolist()
+            target_week_records = df_records[df_records["week_key"] == target_week] if not df_records.empty else pd.DataFrame()
+            signed_in_week = target_week_records["group_name"].tolist() if not target_week_records.empty else []
             
             col_left, col_right = st.columns(2)
             with col_left:
@@ -301,7 +317,7 @@ with tab2:
             search_group = st.selectbox("請選擇欲調閱資料的組別：", GROUPS)
             st.info(f"👥 **{search_group} 成員名單**：{groups_dict.get(search_group, '無')}")
             
-            group_df = df_records[df_records["group_name"] == search_group].sort_values(by="week_key", ascending=False)
+            group_df = df_records[df_records["group_name"] == search_group].sort_values(by="week_key", ascending=False) if not df_records.empty else pd.DataFrame()
             if not group_df.empty:
                 st.write(f"**{search_group}** 的歷史簽到紀錄（共 {len(group_df)} 次）：")
                 st.dataframe(group_df[["week_key", "signer", "mode", "timestamp"]].rename(columns={
