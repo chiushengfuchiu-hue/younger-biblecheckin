@@ -214,9 +214,10 @@ with tab1:
         st.info(f"👤 **簽到代表**：{record.get('signer', '未知')}\n\n📌 **出席方式**：{record['mode']}\n\n⏰ **完成時間**：{record['timestamp']}")
         st.button("完成簽到（本週已登記）", disabled=True, use_container_width=True)
     else:
-        # 自動拆解該組的名字成獨立選單項目（支援頓號、逗號、空格）
+        # 自動拆解該組的名字成獨立選單項目（支援句點、頓號、逗號、空格）
         raw_members_text = groups_dict.get(selected_group, "")
-        member_list = [m.strip() for m in raw_members_text.replace("，", ",").replace("、", ",").split(",") if m.strip()]
+        clean_text = raw_members_text.replace("，", ",").replace("、", ",").replace("．", ",").replace(".", ",")
+        member_list = [m.strip() for m in clean_text.split(",") if m.strip()]
         
         if not member_list:
             member_list = ["尚無成員資料"]
