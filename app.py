@@ -225,14 +225,20 @@ tab1, tab2 = st.tabs(["✍️ 青少年簽到", "🔒 輔導快速管理後台"]
 with tab1:
     verse_info = get_weekly_verse(week_number)
     
-    st.info(f"""
-    📅 **今天是 {today_str}（【第 {current_session_num} 次】靈修禱告小組）**  
-    📖 **本週經文**：*{verse_info['verse']}* —— **{verse_info['ref']}**  
-
-    💡 **輔導小叮嚀**：{verse_info['encouragement']}
-    """)
+    st.write(f"📅 **今天是 {today_str}（【第 {current_session_num} 次】靈修禱告小組）**")
     
+    # 1. 本週經文（固定高度滾動框）
+    st.markdown(f"📖 **本週經文：{verse_info['ref']}**")
+    with st.container(height=200):
+        # 處理換行
+        formatted_verse = verse_info['verse'].replace('\\n', '\n\n')
+        st.markdown(formatted_verse)
+        
+    # 2. 輔導叮嚀與靈修分享（背景+默想）
+    st.info(f"💡 **輔導小叮嚀與靈修分享**：\n\n{verse_info['encouragement']}")
+
     st.subheader(f"📅 本週組別簽到區間：{week_range_str}")
+    # 下方保持原本選擇組別與簽到邏輯...
     selected_group = st.selectbox("請選擇您的組別：", GROUPS)
     
     members_text = groups_dict.get(selected_group, "尚無成員資料")
