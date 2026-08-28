@@ -232,7 +232,7 @@ with tab1:
     
     st.write("") # 稍微留空
     
-    # 2. 輔導小叮嚀（背景+默想）：設定專屬對話框與內部滾輪，高度固定 180px 適合手機
+    # 2. 經文背景+默想：設定專屬對話框與內部滾輪，高度固定 180px 適合手機
     encouragement_text = verse_info['encouragement'].replace('\n', '<br>').replace('\\n', '<br>')
     st.markdown(f"""
         <div style="
@@ -249,7 +249,7 @@ with tab1:
             margin-bottom: 15px;
             -webkit-overflow-scrolling: touch;
         ">
-            <strong style="font-size: 15px;">💡 輔導小叮嚀與靈修分享：</strong><br><br>
+            <strong style="font-size: 15px;">💡 經文背景默想與分享：</strong><br><br>
             {encouragement_text}
         </div>
     """, unsafe_allow_html=True)
