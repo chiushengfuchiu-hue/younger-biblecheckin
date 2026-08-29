@@ -5,6 +5,39 @@ import requests
 import os
 import gspread
 from google.oauth2.service_account import Credentials
+import datetime
+import os
+import requests
+import gspread
+import pandas as pd
+import streamlit as st
+from google.oauth2.service_account import Credentials
+from zoneinfo import ZoneInfo  # 👈 新增這行：導入時區處理庫
+
+# ==========================================
+# 4. 主介面邏輯
+# ==========================================
+st.title("📖 青少年靈修禱告小組簽到系統")
+
+# 關鍵修正：強制指定台灣時區 (UTC+8)
+taipei_tz = ZoneInfo("Asia/Taipei")
+now = datetime.datetime.now(taipei_tz)
+
+# 1. 計算目前這週【星期日 ～ 星期六】區間
+idx_sun = (now.weekday() + 1) % 7
+start_of_week = now - datetime.timedelta(days=idx_sun)
+end_of_week = start_of_week + datetime.timedelta(days=6)
+week_range_str = f"{start_of_week.strftime('%Y/%m/%d')} (日) ~ {end_of_week.strftime('%Y/%m/%d')} (六)"
+
+# 2. 以 start_of_week (週日) 為基準計算 ISO 週數與年份 (確保週日凌晨12點自動切換為新的一週)
+start_sun_date = start_of_week.date()
+week_number = start_sun_date.isocalendar()[1]
+year_number = start_sun_date.isocalendar()[0]
+
+current_week_key = f"{year_number}-W{week_number:02d}"
+today_str = now.strftime("%Y年%m月%d日")
+
+current_session_num = get_session_info(current_week_key)
 
 # ==========================================
 # 1. 基本設定與參數
