@@ -192,18 +192,14 @@ st.title("📖 青少年靈修禱告小組簽到系統")
 
 now = datetime.datetime.now()
 
-# 1. 計算目前這週【星期日 ～ 星期六】區間
+# 計算目前這週【星期日 ～ 星期六】區間
 idx_sun = (now.weekday() + 1) % 7
 start_of_week = now - datetime.timedelta(days=idx_sun)
 end_of_week = start_of_week + datetime.timedelta(days=6)
 week_range_str = f"{start_of_week.strftime('%Y/%m/%d')} (日) ~ {end_of_week.strftime('%Y/%m/%d')} (六)"
 
-# 2. 修正：以 start_of_week (週日) 為基準計算 ISO 週數與年份 (確保週日凌晨12點自動切換為新的一週)
-start_sun_date = start_of_week.date()
-week_number = start_sun_date.isocalendar()[1]
-year_number = start_sun_date.isocalendar()[0]
-
-current_week_key = f"{year_number}-W{week_number:02d}"
+week_number = now.isocalendar()[1]
+current_week_key = f"{now.year}-W{week_number:02d}"
 today_str = now.strftime("%Y年%m月%d日")
 
 current_session_num = get_session_info(current_week_key)
@@ -265,8 +261,10 @@ with tab1:
     st.markdown(f"👥 **{selected_group} 全組成員**：{members_text}")
     st.write("")
     
-    # 若本週已完成簽到，直接隱藏所有詳細紀錄與訊息，僅顯示「已完成簽到」按鈕
     if selected_group in signed_groups_this_week:
+        record = df_records[(df_records["week_key"] == current_week_key) & (df_records["group_name"] == selected_group)].iloc[0]
+        st.success(f"🎉 **{selected_group}** 本週（第 {current_session_num} 次）已完成簽到！")
+        st.info(f"👤 **簽到代表**：{record.get('signer', '未知')}\n\n📌 **出席方式**：{record['mode']}\n\n⏰ **完成時間**：{record['timestamp']}")
         st.button("完成簽到（本週已登記）", disabled=True, use_container_width=True)
     else:
         raw_members_text = groups_dict.get(selected_group, "")
