@@ -192,20 +192,24 @@ st.title("📖 青少年靈修禱告小組簽到系統")
 
 now = datetime.datetime.now()
 
-# 計算目前這週【星期日 ～ 星期六】區間
+# 1. 計算目前這週【星期日 ～ 星期六】區間
 idx_sun = (now.weekday() + 1) % 7
 start_of_week = now - datetime.timedelta(days=idx_sun)
 end_of_week = start_of_week + datetime.timedelta(days=6)
 week_range_str = f"{start_of_week.strftime('%Y/%m/%d')} (日) ~ {end_of_week.strftime('%Y/%m/%d')} (六)"
 
-week_number = now.isocalendar()[1]
-current_week_key = f"{now.year}-W{week_number:02d}"
+# 2. 修正：以「週日 (start_of_week)」的日期來計算 ISO 週數與年份
+# 這樣週日凌晨 12 點一到，current_week_key 就會跟著 start_of_week 一起跳到新的一週！
+start_sun_date = start_of_week.date()
+week_number = start_sun_date.isocalendar()[1]
+year_number = start_sun_date.isocalendar()[0]  # 確保跨年時 ISO 年份也正確
+
+current_week_key = f"{year_number}-W{week_number:02d}"
 today_str = now.strftime("%Y年%m月%d日")
 
 current_session_num = get_session_info(current_week_key)
 
 groups_dict, sheet_err = load_youth_groups_and_members()
-
 if not groups_dict:
     groups_dict = {"大衛": "預設組員", "亞伯拉罕": "預設組員"}
     if sheet_err:
