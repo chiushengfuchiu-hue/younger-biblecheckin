@@ -10,6 +10,17 @@ from zoneinfo import ZoneInfo  # 👈 新增這行：導入時區處理庫
 # ==========================================
 # 4. 主介面邏輯
 # ==========================================
+# 👈 1. 必須先在這裡定義 get_session_info 函式！
+def get_session_info(week_key_str):
+    """計算指定 week_key 是第幾次靈修小組"""
+    try:
+        parts = week_key_str.split("-W")
+        w_num = int(parts[1])
+        s_num = (w_num - START_WEEK_NUMBER) + 1
+        return max(1, s_num)
+    except Exception:
+        return 1
+
 st.title("📖 青少年靈修禱告小組簽到系統")
 
 # 關鍵修正：強制指定台灣時區 (UTC+8)
