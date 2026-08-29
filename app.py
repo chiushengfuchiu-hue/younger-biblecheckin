@@ -1,10 +1,3 @@
-import streamlit as st
-import pandas as pd
-import datetime
-import requests
-import os
-import gspread
-from google.oauth2.service_account import Credentials
 import datetime
 import os
 import requests
