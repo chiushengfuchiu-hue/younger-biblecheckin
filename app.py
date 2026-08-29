@@ -198,11 +198,10 @@ start_of_week = now - datetime.timedelta(days=idx_sun)
 end_of_week = start_of_week + datetime.timedelta(days=6)
 week_range_str = f"{start_of_week.strftime('%Y/%m/%d')} (日) ~ {end_of_week.strftime('%Y/%m/%d')} (六)"
 
-# 2. 修正：以「週日 (start_of_week)」的日期來計算 ISO 週數與年份
-# 這樣週日凌晨 12 點一到，current_week_key 就會跟著 start_of_week 一起跳到新的一週！
+# 2. 修正：以 start_of_week (週日) 為基準計算 ISO 週數與年份 (確保週日凌晨12點自動切換為新的一週)
 start_sun_date = start_of_week.date()
 week_number = start_sun_date.isocalendar()[1]
-year_number = start_sun_date.isocalendar()[0]  # 確保跨年時 ISO 年份也正確
+year_number = start_sun_date.isocalendar()[0]
 
 current_week_key = f"{year_number}-W{week_number:02d}"
 today_str = now.strftime("%Y年%m月%d日")
@@ -210,6 +209,7 @@ today_str = now.strftime("%Y年%m月%d日")
 current_session_num = get_session_info(current_week_key)
 
 groups_dict, sheet_err = load_youth_groups_and_members()
+
 if not groups_dict:
     groups_dict = {"大衛": "預設組員", "亞伯拉罕": "預設組員"}
     if sheet_err:
@@ -236,7 +236,7 @@ with tab1:
     
     st.write("") # 稍微留空
     
-    # 2. 經文背景+默想：設定專屬對話框與內部滾輪，高度固定 180px 適合手機
+    # 2. 輔導小叮嚀（背景+默想）：設定專屬對話框與內部滾輪，高度固定 180px 適合手機
     encouragement_text = verse_info['encouragement'].replace('\n', '<br>').replace('\\n', '<br>')
     st.markdown(f"""
         <div style="
@@ -253,7 +253,7 @@ with tab1:
             margin-bottom: 15px;
             -webkit-overflow-scrolling: touch;
         ">
-            <strong style="font-size: 15px;">💡 經文背景默想與分享：</strong><br><br>
+            <strong style="font-size: 15px;">💡 輔導小叮嚀與靈修分享：</strong><br><br>
             {encouragement_text}
         </div>
     """, unsafe_allow_html=True)
@@ -265,10 +265,8 @@ with tab1:
     st.markdown(f"👥 **{selected_group} 全組成員**：{members_text}")
     st.write("")
     
+    # 若本週已完成簽到，直接隱藏所有詳細紀錄與訊息，僅顯示「已完成簽到」按鈕
     if selected_group in signed_groups_this_week:
-        record = df_records[(df_records["week_key"] == current_week_key) & (df_records["group_name"] == selected_group)].iloc[0]
-        st.success(f"🎉 **{selected_group}** 本週（第 {current_session_num} 次）已完成簽到！")
-        st.info(f"👤 **簽到代表**：{record.get('signer', '未知')}\n\n📌 **出席方式**：{record['mode']}\n\n⏰ **完成時間**：{record['timestamp']}")
         st.button("完成簽到（本週已登記）", disabled=True, use_container_width=True)
     else:
         raw_members_text = groups_dict.get(selected_group, "")
