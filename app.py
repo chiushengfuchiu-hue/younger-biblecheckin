@@ -1,47 +1,11 @@
-import datetime
-import os
-import requests
-import gspread
-import pandas as pd
 import streamlit as st
+import pandas as pd
+import datetime
+import requests
+import os
+import gspread
 from google.oauth2.service_account import Credentials
-from zoneinfo import ZoneInfo  # 👈 新增這行：導入時區處理庫
-
-# ==========================================
-# 4. 主介面邏輯
-# ==========================================
-# 👈 1. 必須先在這裡定義 get_session_info 函式！
-def get_session_info(week_key_str):
-    """計算指定 week_key 是第幾次靈修小組"""
-    try:
-        parts = week_key_str.split("-W")
-        w_num = int(parts[1])
-        s_num = (w_num - START_WEEK_NUMBER) + 1
-        return max(1, s_num)
-    except Exception:
-        return 1
-
-st.title("📖 青少年靈修禱告小組簽到系統")
-
-# 關鍵修正：強制指定台灣時區 (UTC+8)
-taipei_tz = ZoneInfo("Asia/Taipei")
-now = datetime.datetime.now(taipei_tz)
-
-# 1. 計算目前這週【星期日 ～ 星期六】區間
-idx_sun = (now.weekday() + 1) % 7
-start_of_week = now - datetime.timedelta(days=idx_sun)
-end_of_week = start_of_week + datetime.timedelta(days=6)
-week_range_str = f"{start_of_week.strftime('%Y/%m/%d')} (日) ~ {end_of_week.strftime('%Y/%m/%d')} (六)"
-
-# 2. 以 start_of_week (週日) 為基準計算 ISO 週數與年份 (確保週日凌晨12點自動切換為新的一週)
-start_sun_date = start_of_week.date()
-week_number = start_sun_date.isocalendar()[1]
-year_number = start_sun_date.isocalendar()[0]
-
-current_week_key = f"{year_number}-W{week_number:02d}"
-today_str = now.strftime("%Y年%m月%d日")
-
-current_session_num = get_session_info(current_week_key)
+from zoneinfo import ZoneInfo
 
 # ==========================================
 # 1. 基本設定與參數
@@ -54,8 +18,8 @@ LINE_NOTIFY_TOKEN = ""   # 可在此填入您的 LINE Notify Token
 SHEET_YOUTH_ATTENDANCE = "youth_attendance"
 SHEET_YOUTH_MEMBERS = "youth_members"
 
-# 設定開辦第一週（第 1 次）：2026 年第 34 週
-START_WEEK_NUMBER = 34
+# 修正：將開辦起始週調整為第 33 週（讓 2026/08/30 第 35 週計算出來為【第 3 次】）
+START_WEEK_NUMBER = 33
 START_YEAR = 2026
 
 st.set_page_config(page_title="青少年靈修禱告小組簽到系統", page_icon="📖", layout="wide")
@@ -179,7 +143,8 @@ def send_line_notify(message):
     except Exception as e:
         print(f"LINE 推播失敗: {e}")
 
-def get_weekly_verse(week_num):
+def get_weekly_verse(session_num):
+    """根據『第幾次聚會』順序抓取對應經文"""
     fallback = {
         "verse": "「你的話是我腳前的燈，是我路上的光。」",
         "ref": "詩篇 119:105",
@@ -189,7 +154,7 @@ def get_weekly_verse(week_num):
         try:
             verses_df = pd.read_csv(VERSES_FILE)
             if not verses_df.empty:
-                idx = (week_num - 1) % len(verses_df)
+                idx = (session_num - 1) % len(verses_df)
                 row = verses_df.iloc[idx]
                 return {
                     "verse": str(row["verse"]),
@@ -211,7 +176,7 @@ def get_session_info(week_key_str):
         return 1
 
 def get_week_range_str_from_key(week_key_str):
-    """從 2026-W35 這種 week_key 計算出當週【週日 ～ 週六】的日期字串"""
+    """從 2026-W35 計算當週【週日 ～ 週六】日期字串"""
     try:
         year, w_str = week_key_str.split("-W")
         w_num = int(w_str)
@@ -223,11 +188,13 @@ def get_week_range_str_from_key(week_key_str):
         return "未知日期區間"
 
 # ==========================================
-# 4. 主介面邏輯
+# 4. 主介面邏輯 (唯一一次渲染標題)
 # ==========================================
 st.title("📖 青少年靈修禱告小組簽到系統")
 
-now = datetime.datetime.now()
+# 強制指定台灣時間 (Asia/Taipei)
+taipei_tz = ZoneInfo("Asia/Taipei")
+now = datetime.datetime.now(taipei_tz)
 
 # 計算目前這週【星期日 ～ 星期六】區間
 idx_sun = (now.weekday() + 1) % 7
@@ -235,8 +202,12 @@ start_of_week = now - datetime.timedelta(days=idx_sun)
 end_of_week = start_of_week + datetime.timedelta(days=6)
 week_range_str = f"{start_of_week.strftime('%Y/%m/%d')} (日) ~ {end_of_week.strftime('%Y/%m/%d')} (六)"
 
-week_number = now.isocalendar()[1]
-current_week_key = f"{now.year}-W{week_number:02d}"
+# 以 start_of_week (週日) 為基準計算 ISO 週數
+start_sun_date = start_of_week.date()
+week_number = start_sun_date.isocalendar()[1]
+year_number = start_sun_date.isocalendar()[0]
+
+current_week_key = f"{year_number}-W{week_number:02d}"
 today_str = now.strftime("%Y年%m月%d日")
 
 current_session_num = get_session_info(current_week_key)
@@ -258,18 +229,19 @@ tab1, tab2 = st.tabs(["✍️ 青少年簽到", "🔒 輔導快速管理後台"]
 # TAB 1: 前台 - 青少年當週簽到
 # ------------------------------------------
 with tab1:
-    verse_info = get_weekly_verse(week_number)
+    # 根據 current_session_num (第幾次) 取得對應經文
+    verse_info = get_weekly_verse(current_session_num)
     
     st.write(f"📅 **今天是 {today_str}（【第 {current_session_num} 次】靈修禱告小組）**")
     
-    # 1. 經文直接展開（不設滾輪，順暢閱讀）
+    # 經文展開
     st.markdown(f"📖 **本週經文：{verse_info['ref']}**")
     formatted_verse = verse_info['verse'].replace('\\n', '\n\n')
     st.markdown(formatted_verse)
     
-    st.write("") # 稍微留空
+    st.write("")
     
-    # 2. 輔導小叮嚀（背景+默想）：設定專屬對話框與內部滾輪，高度固定 180px 適合手機
+    # 輔導小叮嚀
     encouragement_text = verse_info['encouragement'].replace('\n', '<br>').replace('\\n', '<br>')
     st.markdown(f"""
         <div style="
@@ -299,9 +271,6 @@ with tab1:
     st.write("")
     
     if selected_group in signed_groups_this_week:
-        record = df_records[(df_records["week_key"] == current_week_key) & (df_records["group_name"] == selected_group)].iloc[0]
-        st.success(f"🎉 **{selected_group}** 本週（第 {current_session_num} 次）已完成簽到！")
-        st.info(f"👤 **簽到代表**：{record.get('signer', '未知')}\n\n📌 **出席方式**：{record['mode']}\n\n⏰ **完成時間**：{record['timestamp']}")
         st.button("完成簽到（本週已登記）", disabled=True, use_container_width=True)
     else:
         raw_members_text = groups_dict.get(selected_group, "")
@@ -321,7 +290,7 @@ with tab1:
             if signer_name == "尚無成員資料":
                 st.error("⚠️ 該組尚無成員資料，無法完成簽到！")
             else:
-                timestamp_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                timestamp_str = datetime.datetime.now(ZoneInfo("Asia/Taipei")).strftime("%Y-%m-%d %H:%M:%S")
                 if save_or_update_record(current_week_key, selected_group, signer_name, selected_mode, timestamp_str):
                     line_message = (
                         f"\n🎉【靈修小組簽到成功】\n"
@@ -349,7 +318,6 @@ with tab2:
         with sub_tab1:
             st.markdown("### ⚡ 指定次數/週別手動補簽")
             
-            # 強制確保【第 1 次（START_WEEK_NUMBER）】一直到【當週】都會顯示在選單中
             generated_weeks = [f"{START_YEAR}-W{w:02d}" for w in range(START_WEEK_NUMBER, week_number + 1)]
             existing_weeks = df_records["week_key"].tolist() if not df_records.empty else []
             all_weeks = sorted(list(set(generated_weeks + existing_weeks)), reverse=True)
@@ -441,7 +409,7 @@ with tab2:
                 st.info(f"{search_group} 目前尚無任何簽到紀錄。")
 
         with sub_tab4:
-            st.markdown("### 📜 52 週經文庫檢視")
+            st.markdown("### 📜 52 週經文庫預覽")
             if os.path.exists(VERSES_FILE):
                 v_df = pd.read_csv(VERSES_FILE)
                 st.dataframe(v_df, use_container_width=True, hide_index=True)
