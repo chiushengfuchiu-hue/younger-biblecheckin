@@ -19,7 +19,7 @@ SHEET_YOUTH_ATTENDANCE = "youth_attendance"
 SHEET_YOUTH_MEMBERS = "youth_members"
 
 # 開辦起始週設定
-START_WEEK_NUMBER = 33
+START_WEEK_NUMBER = 34
 START_YEAR = 2026
 
 st.set_page_config(page_title="青少年靈修禱告小組簽到系統", page_icon="📖", layout="wide")
