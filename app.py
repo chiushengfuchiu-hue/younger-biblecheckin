@@ -490,7 +490,7 @@ with tab2:
                     placeholder="請輸入經文內文..."
                 )
                 input_enc = st.text_area(
-                    "4. 輔導小叮嚀與靈修分享 (encouragement)：", 
+                    "4. 經文背景與默想 (encouragement)：", 
                     value=existing_verse["encouragement"], 
                     height=150, 
                     placeholder="請輸入【背景與靈修分享】或輔導小叮嚀..."
