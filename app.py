@@ -143,8 +143,8 @@ def send_line_notify(message):
     except Exception as e:
         print(f"LINE 推播失敗: {e}")
 
-def get_weekly_verse(session_num):
-    """根據『第幾次聚會』順序抓取對應經文"""
+def get_weekly_verse(target_week_num):
+    """從 verses.csv 中精準比對 week 欄位編號抓取經文"""
     fallback = {
         "verse": "「你的話是我腳前的燈，是我路上的光。」",
         "ref": "詩篇 119:105",
@@ -153,14 +153,20 @@ def get_weekly_verse(session_num):
     if os.path.exists(VERSES_FILE):
         try:
             verses_df = pd.read_csv(VERSES_FILE)
-            if not verses_df.empty:
-                idx = (session_num - 1) % len(verses_df)
-                row = verses_df.iloc[idx]
-                return {
-                    "verse": str(row["verse"]),
-                    "ref": str(row["ref"]),
-                    "encouragement": str(row["encouragement"])
-                }
+            if not verses_df.empty and "week" in verses_df.columns:
+                # 將 week 欄位轉為數字進行比對
+                verses_df["week"] = pd.to_numeric(verses_df["week"], errors='coerce')
+                
+                # 直接精準搜尋 week 欄位等於 target_week_num 的資料
+                matched = verses_df[verses_df["week"] == target_week_num]
+                
+                if not matched.empty:
+                    row = matched.iloc[0]
+                    return {
+                        "verse": str(row["verse"]),
+                        "ref": str(row["ref"]),
+                        "encouragement": str(row["encouragement"])
+                    }
         except Exception as e:
             print(f"讀取經文庫失敗: {e}")
     return fallback
