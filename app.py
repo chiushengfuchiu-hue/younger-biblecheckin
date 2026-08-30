@@ -479,7 +479,7 @@ with tab2:
             with st.form(key=f"verse_edit_form_{edit_week}"):
                 input_ref = st.text_input("2. 經文出處 (ref)：", value=existing_verse["ref"])
                 input_verse = st.text_area("3. 經文內文 (verse)：", value=existing_verse["verse"], height=120)
-                input_enc = st.text_area("4. 輔導小叮嚀 (encouragement)：", value=existing_verse["encouragement"], height=150)
+                input_enc = st.text_area("4. 經文背景與思想 (encouragement)：", value=existing_verse["encouragement"], height=150)
                 
                 btn_save = st.form_submit_button("💾 儲存並同步至 Google Sheets", type="primary", use_container_width=True)
                 
