@@ -318,7 +318,7 @@ with tab1:
             margin-bottom: 15px;
             -webkit-overflow-scrolling: touch;
         ">
-            <strong style="font-size: 15px;">💡 輔導小叮嚀與靈修分享：</strong><br><br>
+            <strong style="font-size: 15px;">💡 經文背景及默想：</strong><br><br>
             {enc_display}
         </div>
     """, unsafe_allow_html=True)
