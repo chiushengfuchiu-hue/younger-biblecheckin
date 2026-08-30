@@ -469,8 +469,8 @@ with tab2:
                 st.info(f"{search_group} 目前尚無任何簽到紀錄。")
 
         with sub_tab4:
-            st.markdown("### ✍️ Google Sheets 經文線上編輯器")
-            st.caption("在此新增或更新經文，資料會同步儲存至 Google Sheets，前台將立場更新。")
+            st.markdown("### ✍️ 經文線上編輯器")
+            st.caption("在此新增或更新經文，資料會同步儲存至後端經文資料庫，前段經文處同步更新。")
             
             all_52_weeks = list(range(1, 53))
             edit_week = st.selectbox("1. 請選擇要編輯/新增的週次（1~52 週）：", options=all_52_weeks, index=week_number - 1)
