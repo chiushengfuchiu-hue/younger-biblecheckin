@@ -230,7 +230,8 @@ tab1, tab2 = st.tabs(["✍️ 青少年簽到", "🔒 輔導快速管理後台"]
 # ------------------------------------------
 with tab1:
     # 根據 current_session_num (第幾次) 取得對應經文
-    verse_info = get_weekly_verse(current_session_num)
+     # ✅ 修正後（帶入當年的週數 week_number，如第 35 或 36 週）：
+    verse_info = get_weekly_verse(week_number)
     
     st.write(f"📅 **今天是 {today_str}（【第 {current_session_num} 次】靈修禱告小組）**")
     
