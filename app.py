@@ -11,14 +11,14 @@ from zoneinfo import ZoneInfo
 # 1. 基本設定與參數
 # ==========================================
 ATTENDANCE_MODES = ["實體出席", "線上出席"]
-VERSES_FILE = "verses.csv"
 ADMIN_PASSWORD = "youngerbible"  # 輔導後台密碼
 LINE_NOTIFY_TOKEN = ""   # 可在此填入您的 LINE Notify Token
 
 SHEET_YOUTH_ATTENDANCE = "youth_attendance"
 SHEET_YOUTH_MEMBERS = "youth_members"
+SHEET_YOUTH_VERSES = "youth_verses"  # 經文庫頁籤
 
-# 開辦起始週設定
+# 開辦起始週設定（配合 2026/08/30 為【第 3 次】聚會）
 START_WEEK_NUMBER = 34
 START_YEAR = 2026
 
@@ -130,6 +130,89 @@ def load_youth_groups_and_members():
     except Exception as e:
         return {}, f"連線或讀取失敗 ({e})"
 
+def get_weekly_verse(target_week_num):
+    """從 Google Sheets (youth_verses) 中讀取對應週次的經文"""
+    fallback = {
+        "ref": "詩篇 119:105",
+        "verse": "「你的話是我腳前的燈，是我路上的光。」",
+        "encouragement": "堅持每週靈修分享，讓上帝的話語成為彼此的亮光與祝福！"
+    }
+    try:
+        client = get_gspread_client()
+        sheet_name = st.secrets.get("spreadsheet_name", "Church_Attendance")
+        sheet = client.open(sheet_name).worksheet(SHEET_YOUTH_VERSES)
+        
+        rows = sheet.get_all_values()
+        if len(rows) > 1:
+            header = [str(h).strip().lower() for h in rows[0]]
+            w_idx = header.index("week") if "week" in header else 0
+            ref_idx = header.index("ref") if "ref" in header else 1
+            v_idx = header.index("verse") if "verse" in header else 2
+            enc_idx = header.index("encouragement") if "encouragement" in header else 3
+            
+            for row in rows[1:]:
+                if len(row) > w_idx and str(row[w_idx]).strip() == str(target_week_num):
+                    return {
+                        "ref": str(row[ref_idx]).strip() if len(row) > ref_idx else fallback["ref"],
+                        "verse": str(row[v_idx]).strip() if len(row) > v_idx else fallback["verse"],
+                        "encouragement": str(row[enc_idx]).strip() if len(row) > enc_idx else fallback["encouragement"]
+                    }
+    except Exception as e:
+        print(f"從 Google Sheets 讀取經文失敗: {e}")
+        
+    return fallback
+
+def save_or_update_verse(week_num, ref, verse, encouragement):
+    """更新或新增經文至 Google Sheets (youth_verses)"""
+    try:
+        client = get_gspread_client()
+        sheet_name = st.secrets.get("spreadsheet_name", "Church_Attendance")
+        sheet = client.open(sheet_name).worksheet(SHEET_YOUTH_VERSES)
+        rows = sheet.get_all_values()
+        
+        match_row_idx = None
+        if len(rows) > 0:
+            header = [str(h).strip().lower() for h in rows[0]]
+            w_idx = header.index("week") if "week" in header else 0
+            
+            for idx, row in enumerate(rows[1:], start=2):
+                if len(row) > w_idx and str(row[w_idx]).strip() == str(week_num).strip():
+                    match_row_idx = idx
+                    break
+        else:
+            # 若為空表，建立表頭
+            sheet.append_row(["week", "ref", "verse", "encouragement"])
+            
+        row_data = [int(week_num), str(ref).strip(), str(verse).strip(), str(encouragement).strip()]
+        
+        if match_row_idx:
+            sheet.update(f"A{match_row_idx}:D{match_row_idx}", [row_data])
+        else:
+            sheet.append_row(row_data)
+        return True, "✅ 經文成功更新至 Google Sheets！"
+    except Exception as e:
+        return False, f"⚠️ 更新失敗：{e}"
+
+def delete_verse(week_num):
+    """從 Google Sheets 刪除指定週次的經文"""
+    try:
+        client = get_gspread_client()
+        sheet_name = st.secrets.get("spreadsheet_name", "Church_Attendance")
+        sheet = client.open(sheet_name).worksheet(SHEET_YOUTH_VERSES)
+        rows = sheet.get_all_values()
+        
+        if len(rows) > 1:
+            header = [str(h).strip().lower() for h in rows[0]]
+            w_idx = header.index("week") if "week" in header else 0
+            
+            for idx, row in enumerate(rows[1:], start=2):
+                if len(row) > w_idx and str(row[w_idx]).strip() == str(week_num).strip():
+                    sheet.delete_rows(idx)
+                    return True, f"🗑️ 已成功刪除第 {week_num} 週的經文設定！"
+        return False, f"⚠️ 找不到第 {week_num} 週的經文資料。"
+    except Exception as e:
+        return False, f"⚠️ 刪除失敗：{e}"
+
 # ==========================================
 # 3. 輔助工具函數
 # ==========================================
@@ -142,31 +225,6 @@ def send_line_notify(message):
         requests.post(url, headers=headers, data={"message": message}, timeout=5)
     except Exception as e:
         print(f"LINE 推播失敗: {e}")
-
-def get_weekly_verse(target_week_num):
-    """從 verses.csv 中精準比對 week 欄位編號抓取經文（含自動除錯機制）"""
-    fallback = {
-        "verse": "「你的話是我腳前的燈，是我路上的光。」",
-        "ref": "詩篇 119:105",
-        "encouragement": "堅持每週靈修分享，讓上帝的話語成為彼此的亮光與祝福！"
-    }
-    if os.path.exists(VERSES_FILE):
-        try:
-            verses_df = pd.read_csv(VERSES_FILE, skipinitialspace=True)
-            if not verses_df.empty and "week" in verses_df.columns:
-                verses_df["week"] = pd.to_numeric(verses_df["week"], errors='coerce')
-                matched = verses_df[verses_df["week"] == target_week_num]
-                
-                if not matched.empty:
-                    row = matched.iloc[0]
-                    return {
-                        "verse": str(row["verse"]).strip(),
-                        "ref": str(row["ref"]).strip(),
-                        "encouragement": str(row["encouragement"]).strip()
-                    }
-        except Exception as e:
-            print(f"讀取經文庫失敗: {e}")
-    return fallback
 
 def get_session_info(week_key_str):
     """計算指定 week_key 是第幾次靈修小組"""
@@ -314,7 +372,7 @@ with tab2:
     
     if pwd == ADMIN_PASSWORD:
         st.success("身份驗證成功！")
-        sub_tab1, sub_tab2, sub_tab3, sub_tab4 = st.tabs(["⚡ 快速補簽工作台", "📊 歷程矩陣與檢視範圍", "🔍 單組深度查詢", "📜 52週經文庫預覽"])
+        sub_tab1, sub_tab2, sub_tab3, sub_tab4 = st.tabs(["⚡ 快速補簽工作台", "📊 歷程矩陣與檢視範圍", "🔍 單組深度查詢", "✍️ 經文線上管理庫"])
         
         with sub_tab1:
             st.markdown("### ⚡ 指定次數/週別手動補簽")
@@ -410,15 +468,44 @@ with tab2:
                 st.info(f"{search_group} 目前尚無任何簽到紀錄。")
 
         with sub_tab4:
-            st.markdown("### 📜 52 週經文庫預覽")
-            if os.path.exists(VERSES_FILE):
-                try:
-                    v_df = pd.read_csv(VERSES_FILE, skipinitialspace=True)
-                    st.dataframe(v_df, use_container_width=True, hide_index=True)
-                except Exception as e:
-                    st.error(f"預覽經文庫時發生錯誤：{e}")
-            else:
-                st.warning("目前找不到 `verses.csv` 檔案，系統正使用預設備用經文。")
+            st.markdown("### ✍️ Google Sheets 經文線上編輯器")
+            st.caption("在此新增或更新經文，資料會同步儲存至 Google Sheets，前台將立即更新。")
+            
+            all_52_weeks = list(range(1, 53))
+            edit_week = st.selectbox("1. 請選擇要編輯/新增的週次（1~52 週）：", options=all_52_weeks, index=week_number - 1)
+            
+            existing_verse = get_weekly_verse(edit_week)
+            
+            with st.form(key=f"verse_edit_form_{edit_week}"):
+                input_ref = st.text_input("2. 經文出處 (ref)：", value=existing_verse["ref"])
+                input_verse = st.text_area("3. 經文內文 (verse)：", value=existing_verse["verse"], height=120)
+                input_enc = st.text_area("4. 輔導小叮嚀 (encouragement)：", value=existing_verse["encouragement"], height=150)
+                
+                btn_save = st.form_submit_button("💾 儲存並同步至 Google Sheets", type="primary", use_container_width=True)
+                
+                if btn_save:
+                    if not input_ref or not input_verse:
+                        st.error("⚠️ 經文出處與經文內文不能為空白！")
+                    else:
+                        success, msg = save_or_update_verse(edit_week, input_ref, input_verse, input_enc)
+                        if success:
+                            st.success(msg)
+                            st.rerun()
+                        else:
+                            st.error(msg)
+            
+            st.divider()
+            col_del_label, col_del_btn = st.columns([4, 1])
+            with col_del_label:
+                st.write(f"🗑️ 如需清除第 {edit_week} 週的設定，請點選右側刪除按鈕：")
+            with col_del_btn:
+                if st.button(f"刪除第 {edit_week} 週", type="secondary"):
+                    del_success, del_msg = delete_verse(edit_week)
+                    if del_success:
+                        st.success(del_msg)
+                        st.rerun()
+                    else:
+                        st.error(del_msg)
 
     elif pwd != "":
         st.error("密碼錯誤，請重新輸入！")
