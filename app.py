@@ -131,11 +131,11 @@ def load_youth_groups_and_members():
         return {}, f"連線或讀取失敗 ({e})"
 
 def get_weekly_verse(target_week_num):
-    """從 Google Sheets (youth_verses) 中讀取對應週次的經文"""
-    fallback = {
-        "ref": "詩篇 119:105",
-        "verse": "「你的話是我腳前的燈，是我路上的光。」",
-        "encouragement": "堅持每週靈修分享，讓上帝的話語成為彼此的亮光與祝福！"
+    """從 Google Sheets (youth_verses) 中讀取對應週次的經文，若無設定則傳回空字串"""
+    empty_res = {
+        "ref": "",
+        "verse": "",
+        "encouragement": ""
     }
     try:
         client = get_gspread_client()
@@ -153,14 +153,14 @@ def get_weekly_verse(target_week_num):
             for row in rows[1:]:
                 if len(row) > w_idx and str(row[w_idx]).strip() == str(target_week_num):
                     return {
-                        "ref": str(row[ref_idx]).strip() if len(row) > ref_idx else fallback["ref"],
-                        "verse": str(row[v_idx]).strip() if len(row) > v_idx else fallback["verse"],
-                        "encouragement": str(row[enc_idx]).strip() if len(row) > enc_idx else fallback["encouragement"]
+                        "ref": str(row[ref_idx]).strip() if len(row) > ref_idx else "",
+                        "verse": str(row[v_idx]).strip() if len(row) > v_idx else "",
+                        "encouragement": str(row[enc_idx]).strip() if len(row) > enc_idx else ""
                     }
     except Exception as e:
         print(f"從 Google Sheets 讀取經文失敗: {e}")
         
-    return fallback
+    return empty_res
 
 def save_or_update_verse(week_num, ref, verse, encouragement):
     """更新或新增經文至 Google Sheets (youth_verses)"""
@@ -180,7 +180,6 @@ def save_or_update_verse(week_num, ref, verse, encouragement):
                     match_row_idx = idx
                     break
         else:
-            # 若為空表，建立表頭
             sheet.append_row(["week", "ref", "verse", "encouragement"])
             
         row_data = [int(week_num), str(ref).strip(), str(verse).strip(), str(encouragement).strip()]
@@ -295,13 +294,15 @@ with tab1:
     
     st.write(f"📅 **今天是 {today_str}（【第 {current_session_num} 次】靈修禱告小組）**")
     
-    st.markdown(f"📖 **本週經文：{verse_info['ref']}**")
-    formatted_verse = verse_info['verse'].replace('\\n', '\n\n')
-    st.markdown(formatted_verse)
+    ref_display = verse_info['ref'] if verse_info['ref'] else "（尚無資料）"
+    st.markdown(f"📖 **本週經文：{ref_display}**")
+    
+    verse_display = verse_info['verse'].replace('\\n', '\n\n') if verse_info['verse'] else "（尚無經文內容）"
+    st.markdown(verse_display)
     
     st.write("")
     
-    encouragement_text = verse_info['encouragement'].replace('\n', '<br>').replace('\\n', '<br>')
+    enc_display = verse_info['encouragement'].replace('\n', '<br>').replace('\\n', '<br>') if verse_info['encouragement'] else "（尚無輔導分享小叮嚀）"
     st.markdown(f"""
         <div style="
             height: 180px; 
@@ -318,7 +319,7 @@ with tab1:
             -webkit-overflow-scrolling: touch;
         ">
             <strong style="font-size: 15px;">💡 輔導小叮嚀與靈修分享：</strong><br><br>
-            {encouragement_text}
+            {enc_display}
         </div>
     """, unsafe_allow_html=True)
     
@@ -469,7 +470,7 @@ with tab2:
 
         with sub_tab4:
             st.markdown("### ✍️ Google Sheets 經文線上編輯器")
-            st.caption("在此新增或更新經文，資料會同步儲存至 Google Sheets，前台將立即更新。")
+            st.caption("在此新增或更新經文，資料會同步儲存至 Google Sheets，前台將立場更新。")
             
             all_52_weeks = list(range(1, 53))
             edit_week = st.selectbox("1. 請選擇要編輯/新增的週次（1~52 週）：", options=all_52_weeks, index=week_number - 1)
@@ -477,9 +478,23 @@ with tab2:
             existing_verse = get_weekly_verse(edit_week)
             
             with st.form(key=f"verse_edit_form_{edit_week}"):
-                input_ref = st.text_input("2. 經文出處 (ref)：", value=existing_verse["ref"])
-                input_verse = st.text_area("3. 經文內文 (verse)：", value=existing_verse["verse"], height=120)
-                input_enc = st.text_area("4. 經文背景與思想 (encouragement)：", value=existing_verse["encouragement"], height=150)
+                input_ref = st.text_input(
+                    "2. 經文出處 (ref)：", 
+                    value=existing_verse["ref"], 
+                    placeholder="請輸入經文出處（例：使徒行傳 18:24-28）"
+                )
+                input_verse = st.text_area(
+                    "3. 經文內文 (verse)：", 
+                    value=existing_verse["verse"], 
+                    height=120, 
+                    placeholder="請輸入經文內文..."
+                )
+                input_enc = st.text_area(
+                    "4. 輔導小叮嚀與靈修分享 (encouragement)：", 
+                    value=existing_verse["encouragement"], 
+                    height=150, 
+                    placeholder="請輸入【背景與靈修分享】或輔導小叮嚀..."
+                )
                 
                 btn_save = st.form_submit_button("💾 儲存並同步至 Google Sheets", type="primary", use_container_width=True)
                 
