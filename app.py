@@ -202,16 +202,20 @@ st.title("📖 青少年靈修禱告小組簽到系統")
 taipei_tz = ZoneInfo("Asia/Taipei")
 now = datetime.datetime.now(taipei_tz)
 
-# 計算目前這週【星期日 ～ 星期六】區間
+# 1. 計算目前這週【星期日 ～ 星期六】區間
+# weekday(): 週一=0, ..., 週六=5, 週日=6
+# idx_sun 計算離上一個（或今天）週日差幾天
 idx_sun = (now.weekday() + 1) % 7
-start_of_week = now - datetime.timedelta(days=idx_sun)
+start_of_week = now - datetime.timedelta(days=idx_sun) # 取得本週日的日期
 end_of_week = start_of_week + datetime.timedelta(days=6)
+
 week_range_str = f"{start_of_week.strftime('%Y/%m/%d')} (日) ~ {end_of_week.strftime('%Y/%m/%d')} (六)"
 
-# 以 start_of_week (週日) 為基準計算 ISO 週數
-start_sun_date = start_of_week.date()
-week_number = start_sun_date.isocalendar()[1]
-year_number = start_sun_date.isocalendar()[0]
+# 2. 關鍵修正：週數必須以「週一」的角度來算，否則週日會被 ISO 算成上一週！
+# 我們直接拿 start_of_week (週日) + 1 天（變週一），這樣週日就會跟接下來的六天算在「同一週 (W36)」！
+monday_of_this_week = start_of_week + datetime.timedelta(days=1)
+week_number = monday_of_this_week.isocalendar()[1]
+year_number = monday_of_this_week.isocalendar()[0]
 
 current_week_key = f"{year_number}-W{week_number:02d}"
 today_str = now.strftime("%Y年%m月%d日")
