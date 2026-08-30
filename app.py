@@ -18,7 +18,7 @@ LINE_NOTIFY_TOKEN = ""   # 可在此填入您的 LINE Notify Token
 SHEET_YOUTH_ATTENDANCE = "youth_attendance"
 SHEET_YOUTH_MEMBERS = "youth_members"
 
-# 修正：將開辦起始週調整為第 33 週（讓 2026/08/30 第 35 週計算出來為【第 3 次】）
+# 開辦起始週設定
 START_WEEK_NUMBER = 33
 START_YEAR = 2026
 
@@ -144,7 +144,7 @@ def send_line_notify(message):
         print(f"LINE 推播失敗: {e}")
 
 def get_weekly_verse(target_week_num):
-    """從 verses.csv 中精準比對 week 欄位編號抓取經文"""
+    """從 verses.csv 中精準比對 week 欄位編號抓取經文（含自動除錯機制）"""
     fallback = {
         "verse": "「你的話是我腳前的燈，是我路上的光。」",
         "ref": "詩篇 119:105",
@@ -152,20 +152,17 @@ def get_weekly_verse(target_week_num):
     }
     if os.path.exists(VERSES_FILE):
         try:
-            verses_df = pd.read_csv(VERSES_FILE)
+            verses_df = pd.read_csv(VERSES_FILE, skipinitialspace=True)
             if not verses_df.empty and "week" in verses_df.columns:
-                # 將 week 欄位轉為數字進行比對
                 verses_df["week"] = pd.to_numeric(verses_df["week"], errors='coerce')
-                
-                # 直接精準搜尋 week 欄位等於 target_week_num 的資料
                 matched = verses_df[verses_df["week"] == target_week_num]
                 
                 if not matched.empty:
                     row = matched.iloc[0]
                     return {
-                        "verse": str(row["verse"]),
-                        "ref": str(row["ref"]),
-                        "encouragement": str(row["encouragement"])
+                        "verse": str(row["verse"]).strip(),
+                        "ref": str(row["ref"]).strip(),
+                        "encouragement": str(row["encouragement"]).strip()
                     }
         except Exception as e:
             print(f"讀取經文庫失敗: {e}")
@@ -194,7 +191,7 @@ def get_week_range_str_from_key(week_key_str):
         return "未知日期區間"
 
 # ==========================================
-# 4. 主介面邏輯 (唯一一次渲染標題)
+# 4. 主介面邏輯
 # ==========================================
 st.title("📖 青少年靈修禱告小組簽到系統")
 
@@ -203,16 +200,13 @@ taipei_tz = ZoneInfo("Asia/Taipei")
 now = datetime.datetime.now(taipei_tz)
 
 # 1. 計算目前這週【星期日 ～ 星期六】區間
-# weekday(): 週一=0, ..., 週六=5, 週日=6
-# idx_sun 計算離上一個（或今天）週日差幾天
 idx_sun = (now.weekday() + 1) % 7
-start_of_week = now - datetime.timedelta(days=idx_sun) # 取得本週日的日期
+start_of_week = now - datetime.timedelta(days=idx_sun)
 end_of_week = start_of_week + datetime.timedelta(days=6)
 
 week_range_str = f"{start_of_week.strftime('%Y/%m/%d')} (日) ~ {end_of_week.strftime('%Y/%m/%d')} (六)"
 
-# 2. 關鍵修正：週數必須以「週一」的角度來算，否則週日會被 ISO 算成上一週！
-# 我們直接拿 start_of_week (週日) + 1 天（變週一），這樣週日就會跟接下來的六天算在「同一週 (W36)」！
+# 2. 週數計算修正：以週日+1天（週一）的角度計算 ISO 週數
 monday_of_this_week = start_of_week + datetime.timedelta(days=1)
 week_number = monday_of_this_week.isocalendar()[1]
 year_number = monday_of_this_week.isocalendar()[0]
@@ -239,20 +233,16 @@ tab1, tab2 = st.tabs(["✍️ 青少年簽到", "🔒 輔導快速管理後台"]
 # TAB 1: 前台 - 青少年當週簽到
 # ------------------------------------------
 with tab1:
-    # 根據 current_session_num (第幾次) 取得對應經文
-     # ✅ 修正後（帶入當年的週數 week_number，如第 35 或 36 週）：
     verse_info = get_weekly_verse(week_number)
     
     st.write(f"📅 **今天是 {today_str}（【第 {current_session_num} 次】靈修禱告小組）**")
     
-    # 經文展開
     st.markdown(f"📖 **本週經文：{verse_info['ref']}**")
     formatted_verse = verse_info['verse'].replace('\\n', '\n\n')
     st.markdown(formatted_verse)
     
     st.write("")
     
-    # 輔導小叮嚀
     encouragement_text = verse_info['encouragement'].replace('\n', '<br>').replace('\\n', '<br>')
     st.markdown(f"""
         <div style="
@@ -422,8 +412,11 @@ with tab2:
         with sub_tab4:
             st.markdown("### 📜 52 週經文庫預覽")
             if os.path.exists(VERSES_FILE):
-                v_df = pd.read_csv(VERSES_FILE)
-                st.dataframe(v_df, use_container_width=True, hide_index=True)
+                try:
+                    v_df = pd.read_csv(VERSES_FILE, skipinitialspace=True)
+                    st.dataframe(v_df, use_container_width=True, hide_index=True)
+                except Exception as e:
+                    st.error(f"預覽經文庫時發生錯誤：{e}")
             else:
                 st.warning("目前找不到 `verses.csv` 檔案，系統正使用預設備用經文。")
 
