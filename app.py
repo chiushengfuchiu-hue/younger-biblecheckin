@@ -2,14 +2,13 @@ import streamlit as st
 
 # ==========================================
 # 2. 建議放在這裡！讓使用者一開網頁、隱藏掉不需要的表頭後，就能第一眼看到溫馨提醒
-# 放到側邊欄，平常不佔主畫面空間
-with st.sidebar:
-    with st.expander("💡 網頁若顯示休眠中怎麼辦？"):
-        st.markdown("""
-        1. 如果網頁中間出現 **"Yes, get this app back up!"** 按鈕，請直接點擊它。
-        2. 點擊後請稍候約 10 至 30 秒等待喚醒。
-        3. 載入完成後即可正常使用！
-        """)
+# 預設會收合起來，不會佔用畫面
+with st.expander("💡 點此查看：若開啟程式沒有簽到頁面之處理方式"):
+    st.markdown("""
+    1. 如果網頁中間出現 **"Yes, get this app back up!"** 的按鈕，請直接點擊它。
+    2. 點擊後請稍候約 10 至 30 秒等待喚醒。
+    3. 載入完成後即可正常使用！
+    """)
 import pandas as pd
 import datetime
 import requests
