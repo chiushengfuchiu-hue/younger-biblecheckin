@@ -1,4 +1,4 @@
-  
+
 name: Keep Streamlit Awake
 
 on:
@@ -13,154 +13,211 @@ permissions:
 jobs:
   monitor:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 15
 
     steps:
-      - name: Install browser
+      - name: Install Playwright
         run: |
-          pip install playwright
+          python -m pip install playwright
           python -m playwright install --with-deps chromium
 
       - name: Check both Streamlit apps
         id: check
         continue-on-error: true
+        env:
+          PYTHONUNBUFFERED: "1"
         run: |
           python - <<'PY'
-          import os
           import time
+          import json
+          from pathlib import Path
           from playwright.sync_api import sync_playwright
 
           apps = [
               (
                   "青少年讀經簽到系統",
-                  "https://younger-biblecheckin-8tlpl3g9hoxqngs6xjswgr.streamlit.app/"
+                  "https://younger-biblecheckin-8tlpl3g9hoxqngs6xjswgr.streamlit.app/",
+                  "青少年靈修禱告小組簽到系統"
               ),
               (
-                  "第二個 Streamlit 系統",
-                  "https://2wtptgzdvbrcapdinnlau7.streamlit.app/"
+                  "第二個讀經系統",
+                  "https://2wtptgzdvbrcapdinnlau7.streamlit.app/",
+                  "最新讀經進度表"
               )
           ]
 
+          Path("diagnostics").mkdir(exist_ok=True)
           failures = []
+          results = []
 
           with sync_playwright() as p:
-              browser = p.chromium.launch(headless=True)
+              browser = p.chromium.launch(
+                  headless=True
+              )
 
-              for index, (name, url) in enumerate(apps, 1):
-                  print(f"Checking: {name}", flush=True)
-                  page = browser.new_page()
+              for index, (name, url, expected) in enumerate(apps, 1):
+                  print(f"\nChecking {name}", flush=True)
+
+                  page = browser.new_page(
+                      viewport={
+                          "width": 1440,
+                          "height": 900
+                      },
+                      locale="zh-TW"
+                  )
+
+                  status = "FAILED"
+                  reason = ""
+                  last_text = ""
 
                   try:
-                      page.goto(
+                      response = page.goto(
                           url,
                           wait_until="domcontentloaded",
                           timeout=60000
                       )
 
-                      page.wait_for_timeout(12000)
-
-                      wake = page.get_by_role(
-                          "button",
-                          name="Yes, get this app back up!"
-                      )
-
-                      if wake.count() > 0:
-                          print("Sleep page detected")
-                          wake.first.click(timeout=10000)
-                          page.wait_for_timeout(25000)
-
-                      # Allow Streamlit to finish rendering
-                      if index == 1:
-                          expected_text = "青少年靈修禱告小組簽到系統"
-                      else:
-                          expected_text = "最新讀經進度表"
-
-                     
-                      # Check visible page content directly
-                      import time
-                      
-                      expected_text = (
-                          "青少年靈修禱告小組簽到系統"
-                          if index == 1
-                          else "最新讀經進度表"
-                      )
-                      
-                      found = False
-                      
-                      for attempt in range(12):
-                          content = page.locator("body").inner_text(
-                              timeout=10000
+                      if response:
+                          print(
+                              "HTTP status:",
+                              response.status,
+                              flush=True
                           )
-                      
-                          if expected_text in content:
-                              found = True
+
+                      # Give Streamlit time to render.
+                      page.wait_for_timeout(10000)
+
+                      # Check main document and iframes.
+                      for attempt in range(18):
+                          texts = []
+
+                          for frame in page.frames:
+                              try:
+                                  content = frame.locator(
+                                      "body"
+                                  ).inner_text(
+                                      timeout=3000
+                                  )
+                                  texts.append(content)
+                              except Exception:
+                                  continue
+
+                          last_text = "\n".join(texts)
+
+                          if expected in last_text:
+                              status = "OK"
+                              reason = "Expected app content found"
                               break
-                      
-                          time.sleep(5)
-                      
-                      if not found:
-                          raise Exception(
-                              f"Page content not found: {expected_text}"
+
+                          # Try waking a sleeping app.
+                          for frame in page.frames:
+                              try:
+                                  wake = frame.get_by_role(
+                                      "button",
+                                      name="Yes, get this app back up!"
+                                  )
+
+                                  if wake.count() > 0:
+                                      print(
+                                          "Wake button detected",
+                                          flush=True
+                                      )
+                                      wake.first.click(
+                                          timeout=5000
+                                      )
+                              except Exception:
+                                  pass
+
+                          page.wait_for_timeout(5000)
+
+                      if status != "OK":
+                          reason = (
+                              "Expected app content not found "
+                              "after repeated checks"
                           )
-                      
-                      print(f"Verified: {name}", flush=True)
-
-
-                      # Check for obvious Streamlit errors
-                      content = page.locator("body").inner_text()
-                      error_phrases = [
-                          "This app has gone to sleep",
-                          "This app is unavailable",
-                          "Application error",
-                          "Error running app"
-                      ]
-
-                      if any(
-                          phrase.lower() in content.lower()
-                          for phrase in error_phrases
-                      ):
-                          raise Exception(
-                              "Streamlit error page detected"
+                          failures.append(
+                              f"{name}: {reason}"
                           )
-
-                      print(f"OK: {name}", flush=True)
 
                   except Exception as e:
-                      message = f"{name}: {str(e)}"
-                      failures.append(message)
-                      print(f"FAILED: {message}", flush=True)
+                      reason = str(e)
+                      failures.append(
+                          f"{name}: {reason}"
+                      )
 
                   finally:
+                      print(
+                          f"{name}: {status}",
+                          flush=True
+                      )
+                      print(
+                          "Final URL:",
+                          page.url,
+                          flush=True
+                      )
+
                       try:
                           page.screenshot(
-                              path=f"app-{index}.png",
+                              path=f"diagnostics/app-{index}.png",
                               full_page=True,
-                              timeout=10000
+                              timeout=15000
                           )
-                      except Exception:
-                          pass
+                      except Exception as e:
+                          print("Screenshot error:", e)
+
+                      Path(
+                          f"diagnostics/app-{index}.txt"
+                      ).write_text(
+                          f"Name: {name}\n"
+                          f"URL: {page.url}\n"
+                          f"Status: {status}\n"
+                          f"Reason: {reason}\n\n"
+                          f"Page text:\n{last_text[:10000]}",
+                          encoding="utf-8"
+                      )
+
+                      results.append({
+                          "name": name,
+                          "status": status,
+                          "reason": reason
+                      })
+
                       page.close()
 
               browser.close()
 
-          with open("monitor-result.txt", "w") as f:
-              if failures:
-                  f.write("\n".join(failures))
-              else:
-                  f.write("All apps passed.")
+          Path(
+              "diagnostics/results.json"
+          ).write_text(
+              json.dumps(
+                  results,
+                  ensure_ascii=False,
+                  indent=2
+              ),
+              encoding="utf-8"
+          )
 
           if failures:
+              Path(
+                  "diagnostics/failures.txt"
+              ).write_text(
+                  "\n".join(failures),
+                  encoding="utf-8"
+              )
               raise SystemExit(1)
+
+          print(
+              "Both Streamlit apps passed.",
+              flush=True
+          )
           PY
 
-      - name: Save screenshots
+      - name: Save diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: streamlit-monitor-results
-          path: |
-            app-*.png
-            monitor-result.txt
+          path: diagnostics/
           if-no-files-found: ignore
           retention-days: 7
 
@@ -172,34 +229,57 @@ jobs:
           python - <<'PY'
           import os
           import smtplib
+          from pathlib import Path
           from email.message import EmailMessage
           from datetime import datetime, timezone, timedelta
 
-          taiwan = timezone(timedelta(hours=8))
-          now = datetime.now(taiwan).strftime(
-              "%Y-%m-%d %H:%M:%S"
+          taiwan = timezone(
+              timedelta(hours=8)
           )
 
-          try:
-              with open("monitor-result.txt") as f:
-                  details = f.read()
-          except FileNotFoundError:
-              details = "Monitoring script failed."
+          now = datetime.now(
+              taiwan
+          ).strftime("%Y-%m-%d %H:%M:%S")
+
+          failure_file = Path(
+              "diagnostics/failures.txt"
+          )
+
+          if failure_file.exists():
+              details = failure_file.read_text(
+                  encoding="utf-8"
+              )
+          else:
+              details = (
+                  "Website monitoring encountered "
+                  "an unexpected error."
+              )
 
           email = EmailMessage()
-          email["Subject"] = "Streamlit 網站異常通知"
-          email["From"] = "chiushengfu.chiu@gmail.com"
-          email["To"] = "chiushengfu.chiu@gmail.com"
+
+          email["Subject"] = (
+              "Streamlit 網站異常通知"
+          )
+
+          email["From"] = (
+              "chiushengfu.chiu@gmail.com"
+          )
+
+          email["To"] = (
+              "chiushengfu.chiu@gmail.com"
+          )
 
           email.set_content(
-              f"網站定時檢查發現異常。\n\n"
+              f"網站檢查發現異常。\n\n"
               f"檢查時間：{now}（台灣時間）\n\n"
               f"異常內容：\n{details}\n\n"
-              f"請登入 GitHub Actions 查看詳細紀錄。"
+              f"請到 GitHub Actions 查看截圖與紀錄。"
           )
 
           with smtplib.SMTP_SSL(
-              "smtp.gmail.com", 465, timeout=30
+              "smtp.gmail.com",
+              465,
+              timeout=30
           ) as smtp:
               smtp.login(
                   "chiushengfu.chiu@gmail.com",
@@ -207,7 +287,9 @@ jobs:
               )
               smtp.send_message(email)
 
-          print("Alert email sent.")
+          print(
+              "Gmail alert sent successfully."
+          )
           PY
 
       - name: Mark workflow failed
