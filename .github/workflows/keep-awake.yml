@@ -7,10 +7,13 @@ on:
     - cron: '0 22,6,14 * * *'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
-  wake:
+  monitor:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 12
 
     steps:
       - name: Install browser
@@ -18,54 +21,163 @@ jobs:
           pip install playwright
           python -m playwright install --with-deps chromium
 
-      - name: Visit both Streamlit apps
+      - name: Check both Streamlit apps
+        id: check
+        continue-on-error: true
         run: |
           python - <<'PY'
+          import os
+          import time
           from playwright.sync_api import sync_playwright
 
-          urls = [
-              "https://younger-biblecheckin-8tlpl3g9hoxqngs6xjswgr.streamlit.app/",
-              "https://2wtptgzdvbrcapdinnlau7.streamlit.app/"
+          apps = [
+              (
+                  "青少年讀經簽到系統",
+                  "https://younger-biblecheckin-8tlpl3g9hoxqngs6xjswgr.streamlit.app/"
+              ),
+              (
+                  "第二個 Streamlit 系統",
+                  "https://2wtptgzdvbrcapdinnlau7.streamlit.app/"
+              )
           ]
+
+          failures = []
 
           with sync_playwright() as p:
               browser = p.chromium.launch(headless=True)
-              for i, url in enumerate(urls, 1):
-                  print(f"Visiting app {i}: {url}", flush=True)
+
+              for index, (name, url) in enumerate(apps, 1):
+                  print(f"Checking: {name}", flush=True)
                   page = browser.new_page()
+
                   try:
                       page.goto(
                           url,
                           wait_until="domcontentloaded",
                           timeout=60000
                       )
-                      page.wait_for_timeout(15000)
+
+                      page.wait_for_timeout(12000)
 
                       wake = page.get_by_role(
                           "button",
                           name="Yes, get this app back up!"
                       )
-                      if wake.count() > 0:
-                          wake.first.click()
-                          page.wait_for_timeout(30000)
 
-                      print("Final URL:", page.url)
-                      print("Title:", page.title())
-                      page.screenshot(
-                          path=f"app-{i}.png",
-                          full_page=True
-                      )
+                      if wake.count() > 0:
+                          print("Sleep page detected")
+                          wake.first.click(timeout=10000)
+                          page.wait_for_timeout(25000)
+
+                      # Allow Streamlit to finish rendering
+                      page.locator(
+                          '[data-testid="stAppViewContainer"]'
+                      ).wait_for(timeout=45000)
+
+                      # Check for obvious Streamlit errors
+                      content = page.locator("body").inner_text()
+                      error_phrases = [
+                          "This app has gone to sleep",
+                          "This app is unavailable",
+                          "Application error",
+                          "Error running app"
+                      ]
+
+                      if any(
+                          phrase.lower() in content.lower()
+                          for phrase in error_phrases
+                      ):
+                          raise Exception(
+                              "Streamlit error page detected"
+                          )
+
+                      print(f"OK: {name}", flush=True)
+
                   except Exception as e:
-                      print(f"App {i} error: {e}")
+                      message = f"{name}: {str(e)}"
+                      failures.append(message)
+                      print(f"FAILED: {message}", flush=True)
+
                   finally:
+                      try:
+                          page.screenshot(
+                              path=f"app-{index}.png",
+                              full_page=True,
+                              timeout=10000
+                          )
+                      except Exception:
+                          pass
                       page.close()
+
               browser.close()
+
+          with open("monitor-result.txt", "w") as f:
+              if failures:
+                  f.write("\n".join(failures))
+              else:
+                  f.write("All apps passed.")
+
+          if failures:
+              raise SystemExit(1)
           PY
 
       - name: Save screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: streamlit-checks
-          path: app-*.png
+          name: streamlit-monitor-results
+          path: |
+            app-*.png
+            monitor-result.txt
           if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Send Gmail alert
+        if: steps.check.outcome == 'failure'
+        env:
+          GMAIL_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+        run: |
+          python - <<'PY'
+          import os
+          import smtplib
+          from email.message import EmailMessage
+          from datetime import datetime, timezone, timedelta
+
+          taiwan = timezone(timedelta(hours=8))
+          now = datetime.now(taiwan).strftime(
+              "%Y-%m-%d %H:%M:%S"
+          )
+
+          try:
+              with open("monitor-result.txt") as f:
+                  details = f.read()
+          except FileNotFoundError:
+              details = "Monitoring script failed."
+
+          email = EmailMessage()
+          email["Subject"] = "Streamlit 網站異常通知"
+          email["From"] = "chiushengfu.chiu@gmail.com"
+          email["To"] = "chiushengfu.chiu@gmail.com"
+
+          email.set_content(
+              f"網站定時檢查發現異常。\n\n"
+              f"檢查時間：{now}（台灣時間）\n\n"
+              f"異常內容：\n{details}\n\n"
+              f"請登入 GitHub Actions 查看詳細紀錄。"
+          )
+
+          with smtplib.SMTP_SSL(
+              "smtp.gmail.com", 465, timeout=30
+          ) as smtp:
+              smtp.login(
+                  "chiushengfu.chiu@gmail.com",
+                  os.environ["GMAIL_PASSWORD"]
+              )
+              smtp.send_message(email)
+
+          print("Alert email sent.")
+          PY
+
+      - name: Mark workflow failed
+        if: steps.check.outcome == 'failure'
+        run: exit 1
