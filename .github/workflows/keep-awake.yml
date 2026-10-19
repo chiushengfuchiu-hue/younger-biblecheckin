@@ -75,13 +75,36 @@ jobs:
                       else:
                           expected_text = "最新讀經進度表"
 
-                      page.get_by_text(
-                          expected_text,
-                          exact=False
-                      ).first.wait_for(
-                          state="visible",
-                          timeout=45000
+                     
+                      # Check visible page content directly
+                      import time
+                      
+                      expected_text = (
+                          "青少年靈修禱告小組簽到系統"
+                          if index == 1
+                          else "最新讀經進度表"
                       )
+                      
+                      found = False
+                      
+                      for attempt in range(12):
+                          content = page.locator("body").inner_text(
+                              timeout=10000
+                          )
+                      
+                          if expected_text in content:
+                              found = True
+                              break
+                      
+                          time.sleep(5)
+                      
+                      if not found:
+                          raise Exception(
+                              f"Page content not found: {expected_text}"
+                          )
+                      
+                      print(f"Verified: {name}", flush=True)
+
 
                       # Check for obvious Streamlit errors
                       content = page.locator("body").inner_text()
