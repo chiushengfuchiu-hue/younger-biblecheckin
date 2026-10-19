@@ -3,8 +3,7 @@ name: Keep Streamlit Awake
 
 on:
   schedule:
-    # UTC 22:00, 06:00, 14:00
-    # Taiwan 06:00, 14:00, 22:00
+    # Taiwan: 06:00, 14:00, 22:00
     - cron: '0 22,6,14 * * *'
   workflow_dispatch:
 
@@ -12,51 +11,61 @@ jobs:
   wake:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+
     steps:
       - name: Install browser
         run: |
           pip install playwright
           python -m playwright install --with-deps chromium
 
-      - name: Visit Streamlit app
-        env:
-          APP_URL: https://younger-biblecheckin-8tlpl3g9hoxqngs6xjswgr.streamlit.app/
+      - name: Visit both Streamlit apps
         run: |
           python - <<'PY'
-          import os
           from playwright.sync_api import sync_playwright
+
+          urls = [
+              "https://younger-biblecheckin-8tlpl3g9hoxqngs6xjswgr.streamlit.app/",
+              "https://2wtptgzdvbrcapdinnlau7.streamlit.app/"
+          ]
 
           with sync_playwright() as p:
               browser = p.chromium.launch(headless=True)
-              page = browser.new_page()
-              page.goto(
-                  os.environ["APP_URL"],
-                  wait_until="domcontentloaded",
-                  timeout=60000
-              )
-              page.wait_for_timeout(15000)
-              print("Page title:", page.title())
-              print("Final URL:", page.url)
+              for i, url in enumerate(urls, 1):
+                  print(f"Visiting app {i}: {url}", flush=True)
+                  page = browser.new_page()
+                  try:
+                      page.goto(
+                          url,
+                          wait_until="domcontentloaded",
+                          timeout=60000
+                      )
+                      page.wait_for_timeout(15000)
 
-              wake = page.get_by_role(
-                  "button",
-                  name="Yes, get this app back up!"
-              )
-              if wake.count() > 0:
-                  wake.first.click()
-                  page.wait_for_timeout(30000)
+                      wake = page.get_by_role(
+                          "button",
+                          name="Yes, get this app back up!"
+                      )
+                      if wake.count() > 0:
+                          wake.first.click()
+                          page.wait_for_timeout(30000)
 
-              page.screenshot(
-                  path="streamlit-check.png",
-                  full_page=True
-              )
+                      print("Final URL:", page.url)
+                      print("Title:", page.title())
+                      page.screenshot(
+                          path=f"app-{i}.png",
+                          full_page=True
+                      )
+                  except Exception as e:
+                      print(f"App {i} error: {e}")
+                  finally:
+                      page.close()
               browser.close()
           PY
 
-      - name: Save screenshot
+      - name: Save screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: streamlit-check
-          path: streamlit-check.png
+          name: streamlit-checks
+          path: app-*.png
           if-no-files-found: ignore
