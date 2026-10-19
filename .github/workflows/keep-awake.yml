@@ -1,4 +1,4 @@
-
+  
 name: Keep Streamlit Awake
 
 on:
@@ -70,9 +70,18 @@ jobs:
                           page.wait_for_timeout(25000)
 
                       # Allow Streamlit to finish rendering
-                      page.locator(
-                          '[data-testid="stAppViewContainer"]'
-                      ).wait_for(timeout=45000)
+                      if index == 1:
+                          expected_text = "青少年靈修禱告小組簽到系統"
+                      else:
+                          expected_text = "最新讀經進度表"
+
+                      page.get_by_text(
+                          expected_text,
+                          exact=False
+                      ).first.wait_for(
+                          state="visible",
+                          timeout=45000
+                      )
 
                       # Check for obvious Streamlit errors
                       content = page.locator("body").inner_text()
